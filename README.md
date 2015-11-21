@@ -1,17 +1,15 @@
 Configuru
 =========
 Configuru, an experimental config library for C++, by Emil Ernerfeldt.
-www.github.com/emilk/configuru
-If you find this library useful, please let me know on twitter or in a mail!
-Twitter: @ernerfeldt
-Mail:    emil.ernerfeldt@gmail.com
-Website: www.ilikebigbits.com
 
 License
 -------
 This software is in the public domain. Where that dedication is not
 recognized, you are granted a perpetual, irrevocable license to copy
 and modify this file as you see fit.
+
+That being said, I would appreciate credit!
+If you find this library useful, tweet me at @ernerfeldt mail me at emil.ernerfeldt@gmail.com.
 
 Overview
 --------

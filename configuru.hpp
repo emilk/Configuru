@@ -1,18 +1,18 @@
 /*
+www.github.com/emilk/configuru
+
 Configuru
 =========
 Configuru, an experimental config library for C++, by Emil Ernerfeldt.
-www.github.com/emilk/configuru
-If you find this library useful, please let me know on twitter or in a mail!
-Twitter: @ernerfeldt
-Mail:    emil.ernerfeldt@gmail.com
-Website: www.ilikebigbits.com
 
 License
 -------
 This software is in the public domain. Where that dedication is not
 recognized, you are granted a perpetual, irrevocable license to copy
 and modify this file as you see fit.
+
+That being said, I would appreciate credit!
+If you find this library useful, tweet me at @ernerfeldt mail me at emil.ernerfeldt@gmail.com.
 
 Overview
 --------
@@ -146,7 +146,21 @@ Tabs anywhere else is not allowed.
 #include <unordered_map>
 #include <vector>
 
-#include "loguru.hpp"
+#ifndef CONFIGURU_ONERROR
+	#define CONFIGURU_ONERROR(message_str) \
+		throw std::runtime_error(message_str)
+#endif // CONFIGURU_ONERROR
+
+#ifndef CONFIGURU_ASSERT
+	#include <cassert>
+	#define CONFIGURU_ASSERT(test) assert(test)
+#endif // CONFIGURU_ASSERT
+
+#ifndef CONFIGURU_ON_DANGLING
+	#include <iostream>
+	#define CONFIGURU_ON_DANGLING(where, key) \
+		std::cerr << where << "Key '" << key << "' never accessed" << std::endl
+#endif // CONFIGURU_ON_DANGLING
 
 namespace configuru
 {
@@ -234,14 +248,16 @@ namespace configuru
 			_u.i = i;
 		}
 		explicit Config(size_t i) : _type(Int) {
-			CHECK_F((i & 0x100000000000ull) == 0);
+			if ((i & 0x8000000000000000ull) != 0) {
+				CONFIGURU_ONERROR("Integer too large to fit into 63 bits");
+			}
 			_u.i = static_cast<int64_t>(i);
 		}
 		Config(double f) : _type(Float) {
 			_u.f = f;
 		}
 		Config(const char* str) : _type(String) {
-			CHECK_NOTNULL_F(str);
+			CONFIGURU_ASSERT(str != nullptr);
 			_u.str = new std::string(str);
 		}
 		Config(std::string str) : _type(String) {
@@ -353,7 +369,7 @@ namespace configuru
 
 		Config& operator=(const char* str)
 		{
-			CHECK_NOTNULL_F(str);
+			CONFIGURU_ASSERT(str != nullptr);
 			free();
 			_type = String;
 			_u.str = new std::string(str);
@@ -563,7 +579,7 @@ namespace configuru
 		inline void check(bool b, const char* msg) const
 		{
 			if (!b) {
-				throw_error(msg);
+				on_error(msg);
 			}
 		}
 
@@ -572,7 +588,7 @@ namespace configuru
 		const char* debug_descr() const;
 
 	private:
-		void throw_error(const std::string& msg) const;
+		void on_error(const std::string& msg) const;
 
 		static const char* type_str(Type t);
 
@@ -727,9 +743,14 @@ namespace configuru
 	 Writes in a pretty format with perfect reversibility of everything (including numbers).
 	*/
 
-	std::string write_config(const Config& config);
+	struct FormatOptions
+	{
+		bool json = false;
+	};
 
-	void write_config_file(const std::string& path, const Config& config);
+	std::string write_config(const Config& config, FormatOptions options = FormatOptions());
+
+	void write_config_file(const std::string& path, const Config& config, FormatOptions options = FormatOptions());
 }
 
 #endif // CONFIGURU_HEADER_HPP
@@ -817,7 +838,7 @@ namespace configuru
 		auto&& map = as_map();
 		auto it = map.find(key);
 		if (it == map.end()) {
-			throw_error("Key '" + key + "' not in map");
+			on_error("Key '" + key + "' not in map");
 			return s_invalid;
 		} else {
 			const auto& entry = it->second;
@@ -920,7 +941,7 @@ namespace configuru
 					value.check_dangling();
 				} else {
 					auto where_str = value.where();
-					LOG_F(WARNING, "%s: Key '%s' never accessed", where_str.c_str(), p.first.c_str());
+					CONFIGURU_ON_DANGLING(where_str.c_str(), p.first.c_str());
 				}
 			}
 		} else if (is_list()) {
@@ -1018,23 +1039,18 @@ namespace configuru
 		return where_is(_doc, _line);
 	}
 
-	void on_error(const std::string& where, const std::string& msg)
+	void Config::on_error(const std::string& msg) const
 	{
-		ABORT_F("%s%s", where.c_str(), msg.c_str());
-	}
-
-	void Config::throw_error(const std::string& msg) const
-	{
-		on_error(where(), msg);
+		CONFIGURU_ONERROR(where() + msg);
 	}
 
 	void Config::assert_type(Type t) const
 	{
 		if (_type == BadLookupType) {
 			auto where = where_is(_u.bad_lookup->doc, _u.bad_lookup->line);
-			on_error(where, "Failed to find key '" + _u.bad_lookup->key + "'");
+			CONFIGURU_ONERROR(where + "Failed to find key '" + _u.bad_lookup->key + "'");
 		} else if (_type != t) {
-			throw_error((std::string)"Expected " + type_str(t) + ", got " + type_str(_type));
+			CONFIGURU_ONERROR(where() + "Expected " + type_str(t) + ", got " + type_str(_type));
 		}
 	}
 }
@@ -1240,13 +1256,15 @@ namespace configuru
 	// --------------------------------------------
 
 	// Sets an inclusive range
-	void set_range(bool lookup[256], char a, char b) {
+	void set_range(bool lookup[256], char a, char b)
+	{
 		for (char c=a; c<=b; ++c) {
 			lookup[c] = true;
 		}
 	}
 
-	Parser::Parser(const char* str, DocInfo_SP doc, ParseInfo& info) : _doc(doc), _info(info) {
+	Parser::Parser(const char* str, DocInfo_SP doc, ParseInfo& info) : _doc(doc), _info(info)
+	{
 		_line_nr    = 1;
 		_ptr        = str;
 		_line_start = str;
@@ -1902,14 +1920,18 @@ namespace configuru
 	std::string read_text_file(const char* path)
 	{
 		FILE* fp = fopen(path, "rb");
-		CHECK_NOTNULL_F(fp, "Failed to open '%s' for reading: %s", path, strerror(errno));
+		if (fp == nullptr) {
+			CONFIGURU_ONERROR((std::string)"Failed to open '" + path + "' for reading: " + strerror(errno));
+		}
 		std::string contents;
 		fseek(fp, 0, SEEK_END);
 		contents.resize(ftell(fp));
 		rewind(fp);
 		auto num_read = fread(&contents[0], 1, contents.size(), fp);
 		fclose(fp);
-		CHECK_EQ_F(num_read, contents.size(), "Failed to read from '%s': %s", path, strerror(errno));
+		if (num_read != contents.size()) {
+			CONFIGURU_ONERROR((std::string)"Failed to read from '" + path + "': " + strerror(errno));
+		}
 		return contents;
 	}
 
@@ -2000,9 +2022,11 @@ namespace configuru
 	struct Writer
 	{
 		DocInfo_SP        doc;
+		FormatOptions     options;
 		std::stringstream ss;
 
-		void write_indent(unsigned indent) {
+		void write_indent(unsigned indent)
+		{
 			for (unsigned i=0; i<indent; ++i) {
 				ss << "\t";
 			}
@@ -2010,6 +2034,7 @@ namespace configuru
 
 		void write_prefix_comments(unsigned indent, const Comments& comments)
 		{
+			if (options.json) { return; }
 			if (!comments.empty()) {
 				ss << "\n";
 				for (auto&& c : comments) {
@@ -2021,6 +2046,7 @@ namespace configuru
 
 		void write_postfix_comments(unsigned indent, const Comments& comments)
 		{
+			if (options.json) { return; }
 			(void)indent; // TODO: reindent comments
 			for (auto&& c : comments) {
 				ss << " " << c;
@@ -2035,7 +2061,7 @@ namespace configuru
 		void write_value(unsigned indent, const Config& config,
 							  bool write_prefix, bool write_postfix)
 		{
-			if (config.doc() && config.doc() != this->doc) {
+			if (!options.json && config.doc() && config.doc() != this->doc) {
 				write_config_file(config.doc()->filename, config);
 				ss << "#include <" << config.doc()->filename << ">";
 				return;
@@ -2060,19 +2086,29 @@ namespace configuru
 					ss << "[ ]";
 				} else if (is_simple_list(config)) {
 					ss << "[ ";
-					for (auto&& v : config.as_list()) {
-						write_value(indent + 1, v, false, true);
-						ss << " ";
+					auto&& list = config.as_list();
+					for (size_t i = 0; i < list.size(); ++i) {
+						write_value(indent + 1, list[i], false, true);
+						if (options.json && i + 1 < list.size()) {
+							ss << ", ";
+						} else {
+							ss << " ";
+						}
 					}
 					write_pre_brace_comments(indent + 1, config.pre_end_brace_comments);
 					ss << "]";
 				} else {
 					ss << "[\n";
-					for (auto&& v : config.as_list()) {
-						write_prefix_comments(indent + 1, v.prefix_comments);
+					auto&& list = config.as_list();
+					for (size_t i = 0; i < list.size(); ++i) {
+						write_prefix_comments(indent + 1, list[i].prefix_comments);
 						write_indent(indent + 1);
-						write_value(indent + 1, v, false, true);
-						ss << "\n";
+						write_value(indent + 1, list[i], false, true);
+						if (options.json && i + 1 < list.size()) {
+							ss << ",\n";
+						} else {
+							ss << "\n";
+						}
 					}
 					write_pre_brace_comments(indent + 1, config.pre_end_brace_comments);
 					write_indent(indent);
@@ -2125,12 +2161,18 @@ namespace configuru
 			std::sort(begin(pairs), end(pairs), [](auto a, auto b) {
 				return a->second.nr < b->second.nr;
 			});
+			size_t i = 0;
 			for (auto&& it : pairs) {
 				auto&& value = it->second.value;
 				write_prefix_comments(indent, value.prefix_comments);
 				write_indent(indent);
 				write_key(it->first);
-				if (value.is_map() && value.map_size() != 0) {
+				if (options.json) {
+					ss << ": ";
+					for (size_t i=it->first.size(); i<longest_key; ++i) {
+						ss << " ";
+					}
+				} else if (value.is_map() && value.map_size() != 0) {
 					ss << " ";
 				} else {
 					for (size_t i=it->first.size(); i<longest_key; ++i) {
@@ -2139,22 +2181,29 @@ namespace configuru
 					ss << " = ";
 				}
 				write_value(indent, value, false, true);
-				ss << "\n";
+				if (options.json && i + 1 < pairs.size()) {
+					ss << ",\n";
+				} else {
+					ss << "\n";
+				}
+				i += 1;
 			}
 #endif
 
 			write_pre_brace_comments(indent, config.pre_end_brace_comments);
 		}
 
-		void write_key(const std::string& str) {
-			if (is_identifier(str.c_str())) {
-				ss << str;
-			} else {
+		void write_key(const std::string& str)
+		{
+			if (options.json || !is_identifier(str.c_str())) {
 				write_string(str);
+			} else {
+				ss << str;
 			}
 		}
 
-		void write_number(double val) {
+		void write_number(double val)
+		{
 			auto as_int = (int64_t)val;
 			if ((double)as_int == val) {
 				ss << as_int;
@@ -2196,11 +2245,13 @@ namespace configuru
 			}
 		}
 
-		void write_string(const std::string& str) {
+		void write_string(const std::string& str)
+		{
 			const size_t LONG_LINE = 240;
 
-			if (str.find('\n') == std::string::npos ||
-				str.length() < LONG_LINE       ||
+			if (!options.json                       ||
+			    str.find('\n') == std::string::npos ||
+				str.length() < LONG_LINE            ||
 				str.find("\"\"\"") != std::string::npos)
 			{
 				write_quoted_string(str);
@@ -2211,7 +2262,7 @@ namespace configuru
 
 		void write_hex_digit(unsigned num)
 		{
-			CHECK_LT_F(num, 16u);
+			CONFIGURU_ASSERT(num < 16u);
 			if (num < 10u) { ss << num; }
 			else { ss << ('a' + num - 10); }
 		}
@@ -2256,12 +2307,13 @@ namespace configuru
 		}
 	}; // struct Writer
 
-	std::string write_config(const Config& config)
+	std::string write_config(const Config& config, FormatOptions options)
 	{
 		Writer w;
+		w.options = options;
 		w.doc = config.doc();
 
-		if (config.is_map()) {
+		if (!options.json && config.is_map()) {
 			w.write_map_contents(0, config);
 		} else {
 			w.write_value(0, config, true, true);
@@ -2274,16 +2326,19 @@ namespace configuru
 	static void write_text_file(const char* path, const std::string& data)
 	{
 		auto fp = fopen(path, "wb");
-		CHECK_NOTNULL_F(fp, "Failed to open '%s' for writing: %s", path, strerror(errno));
+		if (fp == nullptr) {
+			CONFIGURU_ONERROR((std::string)"Failed to open '" + path + "' for writing: " + strerror(errno));
+		}
 		auto num_bytes_written = fwrite(data.data(), 1, data.size(), fp);
 		fclose(fp);
-		CHECK_EQ_F(num_bytes_written, data.size(), "Failed to write %lu bytes to '%s': %s",
-		           data.size(), path, strerror(errno));
+		if (num_bytes_written != data.size()) {
+			CONFIGURU_ONERROR((std::string)"Failed to write to '" + path + "': " + strerror(errno));
+		}
 	}
 
-	void write_config_file(const std::string& path, const configuru::Config& config)
+	void write_config_file(const std::string& path, const configuru::Config& config, FormatOptions options)
 	{
-		auto str = write_config(config);
+		auto str = write_config(config, options);
 		write_text_file(path.c_str(), str);
 	}
 } // namespace configuru

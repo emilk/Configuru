@@ -3,9 +3,6 @@
 #define CONFIGURU_IMPLEMENTATION 1
 #include "../configuru.hpp"
 
-#define LOGURU_IMPLEMENTATION 1
-#include "../loguru.hpp"
-
 const char* TEST_CFG = R"(
 pi:   3.14,
 list: [1 2 3 4]
@@ -17,7 +14,14 @@ obj {
 int main()
 {
 	auto cfg = configuru::parse_config(TEST_CFG, "test_cfg");
-	std::cout << "pi: " << (float)cfg["pi"];
+	std::cout << "pi: " << (float)cfg["pi"] << std::endl;
 	cfg.check_dangling();
-	std::cout << configuru::write_config(cfg);
+
+	std::cout << "sjson:" << std::endl;
+	configuru::FormatOptions options;
+	std::cout << configuru::write_config(cfg, options);
+
+	std::cout << "Json:" << std::endl;
+	options.json = true;
+	std::cout << configuru::write_config(cfg, options);
 }
