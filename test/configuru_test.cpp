@@ -23,28 +23,23 @@ std::vector<fs::path> list_files(fs::path directory, std::string extension)
     return result;
 }
 
-void test_json_pass()
+void test(ParseOptions options, bool should_pass, fs::path dir, std::string extension)
 {
-	for (auto path : list_files("../../json_test_suite/pass", ".json"))
+	for (auto path : list_files(dir, extension))
 	{
 		try {
-			auto config = configuru::parse_config_file(path.string(), configuru::JSON);
-			std::cout << "PASS: " << path.filename() << std::endl;
+			auto config = configuru::parse_config_file(path.string(), options);
+			if (should_pass) {
+				std::cout << "PASS: " << path.filename() << std::endl;
+			} else {
+				std::cout << "SHOULD NOT HAVE PARSED: " << path.filename() << std::endl;
+			}
 		} catch (std::exception& e) {
-			std::cout << "FAILED: " << path.filename() << ": " << e.what() << std::endl;
-		}
-	}
-}
-
-void test_json_fail()
-{
-	for (auto path : list_files("../../json_test_suite/fail", ".json"))
-	{
-		try {
-			auto config = configuru::parse_config_file(path.string(), configuru::JSON);
-			std::cout << "SHOULD NOT HAVE SUCCEEDED: " << path.filename() << std::endl;
-		} catch (std::exception& e) {
-			std::cout << "PASS: " << path.filename() << ": " << e.what() << std::endl;
+			if (should_pass) {
+				std::cout << "FAILED: " << path.filename() << ": " << e.what() << std::endl;
+			} else {
+				std::cout << "PASS: " << path.filename() << ": " << e.what() << std::endl;
+			}
 		}
 	}
 }
@@ -59,8 +54,26 @@ obj {
 
 int main()
 {
-	test_json_pass();
-	test_json_fail();
+	std::cout << "JSON expected to pass:" << std::endl;;
+	test(configuru::JSON, true, "../../test_suite/json_pass",      ".json");
+	test(configuru::JSON, true, "../../test_suite/json_only_pass", ".json");
+	test(configuru::JSON, true, "../../test_suite/cfg_only_fail",  ".cfg");
+
+	std::cout << std::endl << "JSON expected to fail:" << std::endl;;
+	test(configuru::JSON, false, "../../test_suite/json_fail", ".json");
+	test(configuru::JSON, false, "../../test_suite/cfg_pass",  ".cfg");
+	test(configuru::JSON, false, "../../test_suite/cfg_fail",  ".cfg");
+
+	std::cout << std::endl << "CFG expected to pass:" << std::endl;;
+	test(configuru::CFG, true,  "../../test_suite/json_pass", ".json");
+	test(configuru::CFG, true,  "../../test_suite/cfg_pass",  ".cfg");
+
+	std::cout << std::endl << "CFG expected to fail:" << std::endl;;
+	test(configuru::CFG, false, "../../test_suite/json_only_pass", ".json");
+	test(configuru::CFG, false, "../../test_suite/json_fail",      ".json");
+	test(configuru::CFG, false, "../../test_suite/cfg_fail",       ".cfg");
+	test(configuru::CFG, false, "../../test_suite/cfg_only_fail",  ".cfg");
+	std::cout << std::endl << std::endl;;
 
 	auto cfg = configuru::parse_config(TEST_CFG, ParseOptions(), "test_cfg");
 	std::cout << "pi: " << (float)cfg["pi"] << std::endl;

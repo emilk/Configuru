@@ -16,9 +16,9 @@ Overview
 Config read/write. The format is a form of simplified JSON.
 This config library is unique in a few ways:
 
-*) Indentation/style must be correct in input.
-*) Round-trip parse/write of comments.
-*) Novel(?) method for finding typos in config files:
+* Indentation/style must be correct in input.
+* Round-trip parse/write of comments.
+* Novel(?) method for finding typos in config files:
 	When reading a config, "forgotten" keys are warned about. For instance:
 
 		auto cfg = configuru::parse_string("colour = [1,1,1]");
