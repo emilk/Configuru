@@ -725,6 +725,14 @@ namespace configuru
 
 	// ----------------------------------------------------------
 
+	struct ParseOptions
+	{
+		bool json = false;
+		bool enforce_indentation = false;
+	};
+
+	static const ParseOptions JSON = ParseOptions{true, false};
+
 	struct ParseInfo {
 		std::unordered_map<std::string, Config> parsed_files; // Two #include gives same Config tree.
 	};
@@ -732,11 +740,11 @@ namespace configuru
 	/*
 	 Zero-ended Utf-8 encoded string of characters.
 	 */
-	Config parse_config(const char* str, DocInfo _doc, ParseInfo& info) throw(parse_error);
-	Config parse_config(const char* str, const char* name) throw(parse_error);
+	Config parse_config(const char* str, ParseOptions options, DocInfo _doc, ParseInfo& info) throw(parse_error);
+	Config parse_config(const char* str, ParseOptions options, const char* name) throw(parse_error);
 
-	Config parse_config_file(const std::string& path, DocInfo_SP doc, ParseInfo& info) throw(parse_error);
-	Config parse_config_file(const std::string& path) throw(parse_error);
+	Config parse_config_file(const std::string& path, ParseOptions options, DocInfo_SP doc, ParseInfo& info) throw(parse_error);
+	Config parse_config_file(const std::string& path, ParseOptions options) throw(parse_error);
 
 	// ----------------------------------------------------------
 	/*
@@ -1146,7 +1154,7 @@ namespace configuru
 	};
 
 	struct Parser {
-		Parser(const char* str, DocInfo_SP doc, ParseInfo& info);
+		Parser(const char* str, ParseOptions options, DocInfo_SP doc, ParseInfo& info);
 
 		bool skip_white(Comments* out_comments, int& out_indentation, bool break_on_newline);
 
@@ -1206,9 +1214,11 @@ namespace configuru
 		}
 
 		void throw_indentation_error(int found_tabs, int expected_tabs) {
-			char buff[128];
-			snprintf(buff, sizeof(buff), "Bad indentation: expected %d tabs, found %d", found_tabs, expected_tabs);
-			throw_error(buff);
+			if (_options.enforce_indentation) {
+				char buff[128];
+				snprintf(buff, sizeof(buff), "Bad indentation: expected %d tabs, found %d", found_tabs, expected_tabs);
+				throw_error(buff);
+			}
 		}
 
 		void parse_assert(bool b, const char* error_msg) {
@@ -1244,13 +1254,14 @@ namespace configuru
 		bool IDENT_CHARS[256]    = { 0 };
 
 	private:
-		DocInfo_SP  _doc;
-		ParseInfo&  _info;
+		ParseOptions _options;
+		DocInfo_SP   _doc;
+		ParseInfo&   _info;
 
-		const char* _ptr;
-		unsigned    _line_nr;
-		const char* _line_start;
-		int         _indentation = 0; // Expected number of tabs between a \n and the next key/value
+		const char*  _ptr;
+		unsigned     _line_nr;
+		const char*  _line_start;
+		int          _indentation = 0; // Expected number of tabs between a \n and the next key/value
 	};
 
 	// --------------------------------------------
@@ -1263,8 +1274,9 @@ namespace configuru
 		}
 	}
 
-	Parser::Parser(const char* str, DocInfo_SP doc, ParseInfo& info) : _doc(doc), _info(info)
+	Parser::Parser(const char* str, ParseOptions options, DocInfo_SP doc, ParseInfo& info) : _doc(doc), _info(info)
 	{
+		_options    = options;
 		_line_nr    = 1;
 		_ptr        = str;
 		_line_start = str;
@@ -1307,7 +1319,9 @@ namespace configuru
 			}
 			else if (_ptr[0] == '\t') {
 				++_ptr;
-				parse_assert(out_indentation != -1, "Tabs should only occur on the start of a line!");
+				if (_options.enforce_indentation) {
+					parse_assert(out_indentation != -1, "Tabs should only occur on the start of a line!");
+				}
 				++out_indentation;
 			}
 			else if (_ptr[0] == ' ') {
@@ -1376,20 +1390,23 @@ namespace configuru
 	*/
 	Config Parser::top_level()
 	{
-		auto state = get_state();
-
 		bool is_map = false;
-		skip_white_ignore_comments();
 
-		if (IDENT_STARTERS[_ptr[0]]) {
-			is_map = true;
-		} else if (_ptr[0] == '"' || _ptr[0] == '@') {
-			parse_string();
+		if (!_options.json)
+		{
+			auto state = get_state();
 			skip_white_ignore_comments();
-			is_map = (_ptr[0] == ':' || _ptr[0] == '=');
-		}
 
-		set_state(state); // restore
+			if (IDENT_STARTERS[_ptr[0]]) {
+				is_map = true;
+			} else if (_ptr[0] == '"' || _ptr[0] == '@') {
+				parse_string();
+				skip_white_ignore_comments();
+				is_map = (_ptr[0] == ':' || _ptr[0] == '=');
+			}
+
+			set_state(state); // restore
+		}
 
 		Config ret;
 		tag(ret);
@@ -1404,7 +1421,7 @@ namespace configuru
 
 		parse_assert(_ptr[0] == 0, "Expected EoF");
 
-		if (!is_map && ret.list_size()==0) {
+		if (!is_map && ret.list_size() == 0) {
 			// Empty file:
 			auto empty_map = Config::new_map();
 			append(empty_map.prefix_comments,        std::move(ret.prefix_comments));
@@ -1413,7 +1430,7 @@ namespace configuru
 			return empty_map;
 		}
 
-		if (!is_map && ret.list_size()==1) {
+		if (!is_map && ret.list_size() == 1) {
 			// A single value - not a list after all:
 			Config first( std::move(ret[0u]) );
 			append(first.prefix_comments,        std::move(ret.prefix_comments));
@@ -1537,7 +1554,9 @@ namespace configuru
 			}
 
 			if (IDENT_STARTERS[_ptr[0]]) {
-				throw_error("Found identifier; expected value. Did you mean to use an {object} rather than a [list]?");
+				if (strcmp(_ptr, "false") != 0 && strcmp(_ptr, "true") != 0 && strcmp(_ptr, "null") != 0) {
+					throw_error("Found identifier; expected value. Did you mean to use an {object} rather than a [list]?");
+				}
 			}
 
 			bool has_separator;
@@ -1894,7 +1913,7 @@ namespace configuru
 		if (it == _info.parsed_files.end()) {
 			auto child_doc = std::make_shared<DocInfo>(path);
 			child_doc->includers.emplace_back(_doc, _line_nr);
-			dst = parse_config_file(path.c_str(), child_doc, _info);
+			dst = parse_config_file(path.c_str(), _options, child_doc, _info);
 			_info.parsed_files[path] = dst;
 		} else {
 			auto child_doc = it->second.doc();
@@ -1905,16 +1924,16 @@ namespace configuru
 
 	// ----------------------------------------------------------------------------------------
 
-	Config parse_config(const char* str, DocInfo_SP doc, ParseInfo& info) throw(parse_error)
+	Config parse_config(const char* str, ParseOptions options, DocInfo_SP doc, ParseInfo& info) throw(parse_error)
 	{
-		Parser p(str, doc, info);
+		Parser p(str, options, doc, info);
 		return p.top_level();
 	}
 
-	Config parse_config(const char* str, const char* name) throw(parse_error)
+	Config parse_config(const char* str, ParseOptions options, const char* name) throw(parse_error)
 	{
 		ParseInfo info;
-		return parse_config(str, std::make_shared<DocInfo>(name), info);
+		return parse_config(str, options, std::make_shared<DocInfo>(name), info);
 	}
 
 	std::string read_text_file(const char* path)
@@ -1935,17 +1954,17 @@ namespace configuru
 		return contents;
 	}
 
-	Config parse_config_file(const std::string& path, DocInfo_SP doc, ParseInfo& info) throw(parse_error)
+	Config parse_config_file(const std::string& path, ParseOptions options, DocInfo_SP doc, ParseInfo& info) throw(parse_error)
 	{
 		// auto file = util::FILEWrapper::read_text_file(path);
 		auto file = read_text_file(path.c_str());
-		return parse_config(file.c_str(), doc, info);
+		return parse_config(file.c_str(), options, doc, info);
 	}
 
-	Config parse_config_file(const std::string& path) throw(parse_error)
+	Config parse_config_file(const std::string& path, ParseOptions options) throw(parse_error)
 	{
 		ParseInfo info;
-		return parse_config_file(path, std::make_shared<DocInfo>(path), info);
+		return parse_config_file(path, options, std::make_shared<DocInfo>(path), info);
 	}
 }
 

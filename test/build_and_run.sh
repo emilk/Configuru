@@ -10,4 +10,4 @@ cd build
 cmake ..
 make
 
-./loguru_test $@
+./configuru_test $@
