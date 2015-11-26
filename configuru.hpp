@@ -727,36 +727,53 @@ namespace configuru
 
 	struct ParseOptions
 	{
-		bool enforce_indentation          = true;  // Must indent with tabs?
+		// This struct basically contain all differences with JSON.
+
+		bool enforce_indentation    = true;  // Must indent with tabs?
 
 		// Top file:
-		bool allow_empty_file             = false; // If true, an empty file is an empty map.
-		bool allow_implicit_top_map       = true;  // Ok with key-value pairs top-level?
-		bool allow_implicit_top_list      = true;  // Ok with several values top-level?
+		bool empty_file             = false; // If true, an empty file is an empty map.
+		bool implicit_top_map       = true;  // Ok with key-value pairs top-level?
+		bool implicit_top_list      = true;  // Ok with several values top-level?
 
 		// Comments:
-		bool allow_single_line_comments   = true;  // Allow this?
-		bool allow_block_comments         = true;  /* Allow this? */
-		bool allow_nesting_block_comments = true;  // /* Allow /*    this? */ */
+		bool single_line_comments   = true;  // Allow this?
+		bool block_comments         = true;  /* Allow this? */
+		bool nesting_block_comments = true;  // /* Allow /*    this? */ */
 
-		// Floats:
-		bool allow_inf                    = true;  // Allow +inf, -inf
-		bool allow_nan                    = true;  // Allow +NaN
+		// Numbers:
+		bool inf                    = true;  // Allow +inf, -inf
+		bool nan                    = true;  // Allow +NaN
+		bool hexadecimal_integers   = true;  // Allow 0xff
+		bool binary_integers        = true;  // Allow 0b1010
+		bool unary_plus             = true;  // Allow +42
 
 		// Lists
-		bool allow_no_list_comma          = true;  // Allow [1 2 3]
-		bool allow_trailing_comma         = true;  // Allow [1, 2, 3,]
+		bool list_omit_comma        = true;  // Allow [1 2 3]
+		bool list_trailing_comma    = true;  // Allow [1, 2, 3,]
 
 		// Maps:
-		bool allow_identifiers_keys       = true; // { is_this_ok: true }
-		bool allow_equal_in_map           = true; // { "is_this_ok" = true }
-		bool allow_omit_colon_before_map  = true; // { "map" { /* nested */ } }
+		bool identifiers_keys       = true;  // { is_this_ok: true }
+		bool map_separator_equal    = false; // { "is_this_ok" = true }
+		bool omit_colon_before_map  = true;  // { "map" { /* nested */ } }
+		bool map_omit_comma         = true;  // Allow {a:1 b:2}
+		bool map_trailing_comma     = true;  // Allow {a:1, b:2,}
+		bool map_duplicate_keys     = false; // Allow {"a":1, "a":2}
+
+		// Strings
+		bool str_csharp_verbatim    = true; // Allow @"Verbatim\strings"
+		bool str_python_multiline   = true; // Allow """ Python\nverbatim strings """
+		bool str_32bit_unicode      = true; // Allow "\U0030dbfd"
+
+		// Special
+		bool allow_macro            = true; // Allow #include "some_other_file.cfg"
 	};
 
 	inline ParseOptions make_json_options()
 	{
 		ParseOptions options;
 		memset(&options, 0, sizeof(options));
+		// Technically map_duplicate_keys should be true, but it is error prone.
 		return options;
 	}
 
@@ -1394,7 +1411,7 @@ namespace configuru
 				out_indentation = -1;
 			}
 			else if (_ptr[0] == '/' && _ptr[1] == '/') {
-				parse_assert(_options.allow_single_line_comments, "Single line comments not allowed");
+				parse_assert(_options.single_line_comments, "Single line comments disabled.");
 				// Single line comment
 				auto start = _ptr;
 				_ptr += 2;
@@ -1406,7 +1423,7 @@ namespace configuru
 				if (break_on_newline) { return true; }
 			}
 			else if (_ptr[0] == '/' && _ptr[1] == '*') {
-				parse_assert(_options.allow_block_comments, "Block comments not allowed");
+				parse_assert(_options.block_comments, "Block comments disabled.");
 				// Multi-line comment
 				auto state = get_state(); // So we can point out the start if there's an error
 				_ptr += 2;
@@ -1419,7 +1436,7 @@ namespace configuru
 					}
 					else if (_ptr[0]=='/' && _ptr[1]=='*') {
 						_ptr += 2;
-						parse_assert(_options.allow_nesting_block_comments, "Nesting comments not allowed");
+						parse_assert(_options.nesting_block_comments, "Nesting comments disabled.");
 						nesting += 1;
 					}
 					else if (_ptr[0]=='*' && _ptr[1]=='/') {
@@ -1460,7 +1477,7 @@ namespace configuru
 	{
 		bool is_map = false;
 
-		if (_options.allow_implicit_top_map)
+		if (_options.implicit_top_map)
 		{
 			auto state = get_state();
 			skip_white_ignore_comments();
@@ -1483,7 +1500,7 @@ namespace configuru
 			parse_map_contents(ret);
 		} else {
 			parse_list_contents(ret);
-			parse_assert(ret.list_size() <= 1 || _options.allow_implicit_top_list, "Multiple values not allowed without enclosing []");
+			parse_assert(ret.list_size() <= 1 || _options.implicit_top_list, "Multiple values not allowed without enclosing []");
 		}
 
 		skip_post_white(&ret);
@@ -1491,7 +1508,7 @@ namespace configuru
 		parse_assert(_ptr[0] == 0, "Expected EoF");
 
 		if (!is_map && ret.list_size() == 0) {
-			if (_options.allow_empty_file) {
+			if (_options.empty_file) {
 				auto empty_map = Config::new_map();
 				append(empty_map.prefix_comments,        std::move(ret.prefix_comments));
 				append(empty_map.postfix_comments,       std::move(ret.postfix_comments));
@@ -1558,19 +1575,19 @@ namespace configuru
 			// Some kind of number:
 
 			if (_ptr[0] == '-' && _ptr[1] == 'i' && _ptr[2]=='n' && _ptr[3]=='f') {
-				parse_assert(_options.allow_inf, "infinity not allowed");
+				parse_assert(_options.inf, "infinity disabled.");
 				_ptr += 4;
 				parse_assert(!IDENT_CHARS[_ptr[0]], "Expected -inf");
 				dst = -std::numeric_limits<double>::infinity();
 			}
 			else if (_ptr[0] == '+' && _ptr[1] == 'i' && _ptr[2]=='n' && _ptr[3]=='f') {
-				parse_assert(_options.allow_inf, "infinity not allowed");
+				parse_assert(_options.inf, "infinity disabled.");
 				_ptr += 4;
 				parse_assert(!IDENT_CHARS[_ptr[0]], "Expected +inf");
 				dst = std::numeric_limits<double>::infinity();
 			}
 			else if (_ptr[0] == '+' && _ptr[1] == 'N' && _ptr[2]=='a' && _ptr[3]=='N') {
-				parse_assert(_options.allow_nan, "NaN (Not a Number) not allowed");
+				parse_assert(_options.nan, "NaN (Not a Number) disabled.");
 				_ptr += 4;
 				parse_assert(!IDENT_CHARS[_ptr[0]], "Expected +NaN");
 				dst = std::numeric_limits<double>::quiet_NaN();
@@ -1635,7 +1652,6 @@ namespace configuru
 
 			bool has_separator;
 			parse_value(value, &has_separator);
-
 			bool has_comma = _ptr[0] == ',';
 
 			if (has_comma) {
@@ -1649,9 +1665,9 @@ namespace configuru
 			bool is_last_element = !_ptr[0] || _ptr[0] == ']';
 
 			if (is_last_element) {
-				parse_assert(!has_comma || _options.allow_trailing_comma, "Trailing comma not allowed");
+				parse_assert(!has_comma || _options.list_trailing_comma, "Trailing comma disabled.");
 			} else {
-				if (_options.allow_no_list_comma) {
+				if (_options.list_omit_comma) {
 					parse_assert(has_separator, "Expected a space, newline, comma or ]");
 				} else {
 					parse_assert(has_comma, "Expected a comma or ]");
@@ -1708,7 +1724,7 @@ namespace configuru
 			std::string key;
 
 			if (IDENT_STARTERS[_ptr[0]] && !is_reserved_identifier(_ptr)) {
-				parse_assert(_options.allow_identifiers_keys, "You need to surround keys with quotes");
+				parse_assert(_options.identifiers_keys, "You need to surround keys with quotes");
 				while (IDENT_CHARS[_ptr[0]]) {
 					key += _ptr[0];
 					_ptr += 1;
@@ -1721,39 +1737,46 @@ namespace configuru
 			}
 
 			skip_white_ignore_comments();
-			if (_ptr[0] == ':' || (_options.allow_equal_in_map && _ptr[0] == '=')) {
+			if (_ptr[0] == ':' || (_options.map_separator_equal && _ptr[0] == '=')) {
 				_ptr += 1;
 				skip_white_ignore_comments();
-			} else if (_options.allow_omit_colon_before_map && (_ptr[0] == '{' || _ptr[0] == '#')) {
-				// Ok to ommit =: in this case
+			} else if (_options.omit_colon_before_map && (_ptr[0] == '{' || _ptr[0] == '#')) {
+				// Ok to ommit : in this case
 			} else {
-				if (_options.allow_equal_in_map && _options.allow_omit_colon_before_map) {
+				if (_options.map_separator_equal && _options.omit_colon_before_map) {
 					throw_error("Expected one of '=', ':', '{' or '#' after map key");
 				} else {
 					throw_error("Expected : after map key");
 				}
 			}
 
-			if (map.has_key(key)) {
+			if (!_options.map_duplicate_keys && map.has_key(key)) {
 				throw_error("Duplicate key: \"" + key + "\"");
 			}
 
 			bool has_separator;
 			parse_value(value, &has_separator);
+			bool has_comma = _ptr[0] == ',';
 
-			if (_ptr[0] == ',') {
-				_ptr += 1;
-				skip_post_white(&value);
-				has_separator = true;
-			} else if (_ptr[0] == ';') {
+			if (has_comma) {
 				_ptr += 1;
 				skip_post_white(&value);
 				has_separator = true;
 			}
 
-			parse_assert(has_separator || !_ptr[0] || _ptr[0] == '}', "Expected a space, comma, semi-color or closing curly brace");
-
 			map[key] = std::move(value);
+
+			bool is_last_element = !_ptr[0] || _ptr[0] == '}';
+
+			if (is_last_element) {
+				parse_assert(!has_comma || _options.map_trailing_comma, "Trailing comma disabled.");
+			} else {
+				if (_options.map_omit_comma) {
+					parse_assert(has_separator, "Expected a space, newline, comma or }");
+				} else {
+					parse_assert(has_comma, "Expected a comma or }");
+				}
+			}
 		}
 	}
 
@@ -1762,6 +1785,7 @@ namespace configuru
 		int sign = +1;
 
 		if (_ptr[0] == '+') {
+			parse_assert(_options.unary_plus, "Prefixing numbers with + is disabled.");
 			_ptr += 1;
 			skip_white_ignore_comments();
 		}
@@ -1775,18 +1799,21 @@ namespace configuru
 
 		// Check if it's an integer:
 		if (_ptr[0] == '0' && _ptr[1] == 'x') {
-			// hex
+			parse_assert(_options.hexadecimal_integers, "Hexadecimal numbers disabled.");
 			_ptr += 2;
 			auto start = _ptr;
 			dst = sign * (int64_t)strtoull(start, (char**)&_ptr, 16);
-			parse_assert(start < _ptr, "Missing hex numbers after 0x");
+			parse_assert(start < _ptr, "Missing hexaxdecimal digits after 0x");
+			return;
 		}
+
 		if (_ptr[0] == '0' && _ptr[1] == 'b') {
-			// binary
+			parse_assert(_options.binary_integers, "Binary numbers disabled.");
 			_ptr += 2;
 			auto start = _ptr;
 			dst = sign * (int64_t)strtoull(start, (char**)&_ptr, 2);
-			parse_assert(start < _ptr, "Missing binary numbers after 0b");
+			parse_assert(start < _ptr, "Missing binary digits after 0b");
+			return;
 		}
 
 		const char* p = _ptr;
@@ -1813,6 +1840,7 @@ namespace configuru
 
 		if (_ptr[0] == '@') {
 			// C# style verbatim string - everything until the next " except "" which is ":
+			parse_assert(_options.str_csharp_verbatim, "C# @-style verbatim strings disabled.");
 			_ptr += 1;
 			swallow('"');
 
@@ -1846,6 +1874,7 @@ namespace configuru
 
 		if (_ptr[1] == '"' && _ptr[2] == '"') {
 			// Multiline string - everything until the next """:
+			parse_assert(_options.str_python_multiline, "Python \"\"\"-style multiline strings disabled.");
 			_ptr += 3;
 			const char* start = _ptr;
 			for (;;) {
@@ -1893,17 +1922,11 @@ namespace configuru
 					if (_ptr[0] == '"') {
 						str += '"';
 						_ptr += 1;
-					} else if (_ptr[0] == '\'') {
-						str += '\'';
-						_ptr += 1;
 					} else if (_ptr[0] == '\\') {
 						str += '\\';
 						_ptr += 1;
 					} else if (_ptr[0] == '/') {
 						str += '/';
-						_ptr += 1;
-					} else if (_ptr[0] == '0') {
-						str += '\0';
 						_ptr += 1;
 					} else if (_ptr[0] == 'b') {
 						str += '\b';
@@ -1927,7 +1950,8 @@ namespace configuru
 						auto num_bytes_written = encode_utf8(str, unicode);
 						parse_assert(num_bytes_written > 0, "Bad unicode codepoint");
 					} else if (_ptr[0] == 'U') {
-						// eight hexadecimal characters
+						// Eight hexadecimal characters
+						parse_assert(_options.str_32bit_unicode, "\\U 32 bit unicodes disabled.");
 						_ptr += 1;
 						uint64_t unicode = parse_hex(8);
 						auto num_bytes_written = encode_utf8(str, unicode);
@@ -1965,6 +1989,8 @@ namespace configuru
 
 	void Parser::parse_macro(Config& dst)
 	{
+		parse_assert(_options.allow_macro, "#macros disabled.");
+
 		swallow("#include", "Expected '#include'");
 		skip_white_ignore_comments();
 
@@ -2253,16 +2279,6 @@ namespace configuru
 
 		void write_map_contents(unsigned indent, const Config& config)
 		{
-#if 0
-			for (auto&& p : config.as_map()) {
-				write_prefix_comments(ident, p.second.value);
-				write_indent(indent);
-				write_key(p.first);
-				ss << " = ";
-				write_value(indent, p.second.value, false, true);
-				ss << "\n";
-			}
-#else
 			// Write in same order as input:
 			auto&& map = config.as_map();
 			std::vector<Config::ConfigMapImpl::const_iterator> pairs;
@@ -2286,18 +2302,13 @@ namespace configuru
 				write_prefix_comments(indent, value.prefix_comments);
 				write_indent(indent);
 				write_key(it->first);
-				if (options.json) {
+				if (!options.json && value.is_map() && value.map_size() != 0) {
+					ss << " ";
+				} else {
 					ss << ": ";
 					for (size_t i=it->first.size(); i<longest_key; ++i) {
 						ss << " ";
 					}
-				} else if (value.is_map() && value.map_size() != 0) {
-					ss << " ";
-				} else {
-					for (size_t i=it->first.size(); i<longest_key; ++i) {
-						ss << " ";
-					}
-					ss << " = ";
 				}
 				write_value(indent, value, false, true);
 				if (options.json && i + 1 < pairs.size()) {
@@ -2307,7 +2318,6 @@ namespace configuru
 				}
 				i += 1;
 			}
-#endif
 
 			write_pre_brace_comments(indent, config.pre_end_brace_comments);
 		}
