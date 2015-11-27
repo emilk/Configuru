@@ -1380,6 +1380,7 @@ namespace configuru
 	{
 		auto start_ptr = _ptr;
 		out_indentation = 0;
+		bool found_newline = false;
 
 		for (;;) {
 			if (_ptr[0] == '\n') {
@@ -1389,15 +1390,17 @@ namespace configuru
 				_line_start = _ptr;
 				out_indentation = 0;
 				if (break_on_newline) { return true; }
+				found_newline = true;
 			}
 			else if (_ptr[0] == '\r') {
 				// CR-LF - windows style newline
-				parse_assert(_ptr[1] == '\n', "CR with no LF");
+				parse_assert(_ptr[1] == '\n', "CR with no LF. \\r only allowed before \\n."); // TODO: this is OK in JSON.
 				_ptr += 2;
 				_line_nr += 1;
 				_line_start = _ptr;
 				out_indentation = 0;
 				if (break_on_newline) { return true; }
+				found_newline = true;
 			}
 			else if (_ptr[0] == '\t') {
 				++_ptr;
@@ -1407,6 +1410,9 @@ namespace configuru
 				++out_indentation;
 			}
 			else if (_ptr[0] == ' ') {
+				if (found_newline && _options.enforce_indentation) {
+					throw_error("Found a space at beginning of a line. Indentation must be done using tabs!");
+				}
 				++_ptr;
 				out_indentation = -1;
 			}
@@ -1436,7 +1442,7 @@ namespace configuru
 					}
 					else if (_ptr[0]=='/' && _ptr[1]=='*') {
 						_ptr += 2;
-						parse_assert(_options.nesting_block_comments, "Nesting comments disabled.");
+						parse_assert(_options.nesting_block_comments, "Nesting comments (/* /* */ */) disabled.");
 						nesting += 1;
 					}
 					else if (_ptr[0]=='*' && _ptr[1]=='/') {
