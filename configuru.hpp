@@ -275,11 +275,7 @@ namespace configuru
 		Config(Config&& o) noexcept { this->swap(o); }
 
 		Config& operator=(const Config& o);
-		Config& operator=(Config&& o) noexcept
-		{
-			this->swap(o);
-			return *this;
-		}
+		Config& operator=(Config&& o) noexcept;
 
 		void swap(Config& o) noexcept;
 
@@ -290,13 +286,13 @@ namespace configuru
 		// ----------------------------------------
 		// Inspectors:
 
-		bool is_null()   const { return _type == Null;   }
-		bool is_bool()   const { return _type == Bool;   }
-		bool is_int()    const { return _type == Int;    }
-		bool is_float()  const { return _type == Float;  }
-		bool is_string() const { return _type == String; }
-		bool is_object()    const { return _type == Object;    }
-		bool is_array()   const { return _type == Array;   }
+		bool is_null()   const { return _type    == Null;       }
+		bool is_bool()   const { return _type    == Bool;       }
+		bool is_int()    const { return _type    == Int;        }
+		bool is_float()  const { return _type    == Float;      }
+		bool is_string() const { return _type    == String;     }
+		bool is_object() const { return _type    == Object;     }
+		bool is_array()  const { return _type    == Array;      }
 		bool is_number() const { return is_int() || is_float(); }
 
 		// Where in source where we defined?
@@ -922,6 +918,7 @@ namespace configuru
 
 	Config& Config::operator=(const Config& o)
 	{
+		// Remember to remember where we come from even when assigned a new value.
 		if (&o == this) { return *this; }
 		free();
 		_type = o._type;
@@ -929,17 +926,42 @@ namespace configuru
 			_u.str = new std::string(*o._u.str);
 		} else {
 			memcpy(&_u, &o._u, sizeof(_u));
-			if (_type == BadLookupType) { _u.array->ref_count += 1; }
-			if (_type == Array)          { _u.array->ref_count += 1; }
-			if (_type == Object)           { _u.object->ref_count  += 1; }
+			if (_type == BadLookupType) { _u.array->ref_count  += 1; }
+			if (_type == Array)         { _u.array->ref_count  += 1; }
+			if (_type == Object)        { _u.object->ref_count += 1; }
 		}
-		_doc      = o._doc;
-		_line     = o._line;
+
+		if (o._doc) {
+			_doc      = o._doc;
+			_line     = o._line;
+		} else if (o._line != (unsigned)-1) {
+			_doc  = nullptr;
+			_line = o._line;
+		} else {
+			// Keep our _doc/_line
+		}
+
 		if (o._comments) {
 			_comments.reset(new ConfigComments(*o._comments));
 		} else {
-			_comments = nullptr;
+			// Keep our _comments
 		}
+		return *this;
+	}
+
+	Config& Config::operator=(Config&& o) noexcept
+	{
+		// Remember to remember where we come from even when assigned a new value.
+		std::swap(_type,     o._type);
+		std::swap(_u,        o._u);
+		if (o._doc || o._line != (unsigned)-1) {
+			std::swap(_doc,      o._doc);
+			std::swap(_line,     o._line);
+		}
+		if (o._comments) {
+			std::swap(_comments, o._comments);
+		}
+
 		return *this;
 	}
 
@@ -1268,7 +1290,7 @@ namespace configuru
 		return (std::string)"'" + c + "'";
 	}
 
-	struct state
+	struct State
 	{
 		const char* ptr;
 		unsigned    line_nr;
@@ -1319,12 +1341,12 @@ namespace configuru
 			var.tag(_doc, _line_nr, column());
 		}
 
-		state get_state() const
+		State get_state() const
 		{
 			return { _ptr, _line_nr, _line_start };
 		}
 
-		void set_state(state s) {
+		void set_state(State s) {
 			_ptr        = s.ptr;
 			_line_nr    = s.line_nr;
 			_line_start = s.line_start;
@@ -1384,6 +1406,13 @@ namespace configuru
 
 		void parse_assert(bool b, const char* error_msg) {
 			if (!b) {
+				throw_error(error_msg);
+			}
+		}
+
+		void parse_assert(bool b, const char* error_msg, const State& error_state) {
+			if (!b) {
+				set_state(error_state);
 				throw_error(error_msg);
 			}
 		}
@@ -1524,7 +1553,7 @@ namespace configuru
 				out_indentation = -1;
 			}
 			else if (_ptr[0] == '/' && _ptr[1] == '/') {
-				parse_assert(_options.single_line_comments, "Single line comments disabled.");
+				parse_assert(_options.single_line_comments, "Single line comments forbidden.");
 				// Single line comment
 				auto start = _ptr;
 				_ptr += 2;
@@ -1536,7 +1565,7 @@ namespace configuru
 				if (break_on_newline) { return true; }
 			}
 			else if (_ptr[0] == '/' && _ptr[1] == '*') {
-				parse_assert(_options.block_comments, "Block comments disabled.");
+				parse_assert(_options.block_comments, "Block comments forbidden.");
 				// Multi-line comment
 				auto state = get_state(); // So we can point out the start if there's an error
 				_ptr += 2;
@@ -1549,7 +1578,7 @@ namespace configuru
 					}
 					else if (_ptr[0]=='/' && _ptr[1]=='*') {
 						_ptr += 2;
-						parse_assert(_options.nesting_block_comments, "Nesting comments (/* /* */ */) disabled.");
+						parse_assert(_options.nesting_block_comments, "Nesting comments (/* /* */ */) forbidden.");
 						nesting += 1;
 					}
 					else if (_ptr[0]=='*' && _ptr[1]=='/') {
@@ -1686,19 +1715,19 @@ namespace configuru
 			// Some kind of number:
 
 			if (_ptr[0] == '-' && _ptr[1] == 'i' && _ptr[2]=='n' && _ptr[3]=='f') {
-				parse_assert(_options.inf, "infinity disabled.");
+				parse_assert(_options.inf, "infinity forbidden.");
 				_ptr += 4;
 				parse_assert(!IDENT_CHARS[_ptr[0]], "Expected -inf");
 				dst = -std::numeric_limits<double>::infinity();
 			}
 			else if (_ptr[0] == '+' && _ptr[1] == 'i' && _ptr[2]=='n' && _ptr[3]=='f') {
-				parse_assert(_options.inf, "infinity disabled.");
+				parse_assert(_options.inf, "infinity forbidden.");
 				_ptr += 4;
 				parse_assert(!IDENT_CHARS[_ptr[0]], "Expected +inf");
 				dst = std::numeric_limits<double>::infinity();
 			}
 			else if (_ptr[0] == '+' && _ptr[1] == 'N' && _ptr[2]=='a' && _ptr[3]=='N') {
-				parse_assert(_options.nan, "NaN (Not a Number) disabled.");
+				parse_assert(_options.nan, "NaN (Not a Number) forbidden.");
 				_ptr += 4;
 				parse_assert(!IDENT_CHARS[_ptr[0]], "Expected +NaN");
 				dst = std::numeric_limits<double>::quiet_NaN();
@@ -1774,6 +1803,8 @@ namespace configuru
 			parse_value(value, &has_separator);
 			int ignore;
 			skip_white(&next_prefix_comments, ignore, false);
+
+			auto comma_state = get_state();
 			bool has_comma = _ptr[0] == ',';
 
 			if (has_comma) {
@@ -1787,8 +1818,9 @@ namespace configuru
 			bool is_last_element = !_ptr[0] || _ptr[0] == ']';
 
 			if (is_last_element) {
-				parse_assert(!has_comma || _options.array_trailing_comma, "Trailing comma disabled.");
-			} else {
+                parse_assert(!has_comma || _options.array_trailing_comma,
+                    "Trailing comma forbidden.", comma_state);
+            } else {
 				if (_options.array_omit_comma) {
 					parse_assert(has_separator, "Expected a space, newline, comma or ]");
 				} else {
@@ -1891,6 +1923,8 @@ namespace configuru
 			parse_value(value, &has_separator);
 			int ignore;
 			skip_white(&next_prefix_comments, ignore, false);
+
+			auto comma_state = get_state();
 			bool has_comma = _ptr[0] == ',';
 
 			if (has_comma) {
@@ -1904,8 +1938,9 @@ namespace configuru
 			bool is_last_element = !_ptr[0] || _ptr[0] == '}';
 
 			if (is_last_element) {
-				parse_assert(!has_comma || _options.object_trailing_comma, "Trailing comma disabled.");
-			} else {
+                parse_assert(!has_comma || _options.object_trailing_comma,
+                    "Trailing comma forbidden.", comma_state);
+            } else {
 				if (_options.object_omit_comma) {
 					parse_assert(has_separator, "Expected a space, newline, comma or }");
 				} else {
@@ -1920,7 +1955,7 @@ namespace configuru
 		int sign = +1;
 
 		if (_ptr[0] == '+') {
-			parse_assert(_options.unary_plus, "Prefixing numbers with + is disabled.");
+			parse_assert(_options.unary_plus, "Prefixing numbers with + is forbidden.");
 			_ptr += 1;
 			skip_white_ignore_comments();
 		}
@@ -1934,7 +1969,7 @@ namespace configuru
 
 		// Check if it's an integer:
 		if (_ptr[0] == '0' && _ptr[1] == 'x') {
-			parse_assert(_options.hexadecimal_integers, "Hexadecimal numbers disabled.");
+			parse_assert(_options.hexadecimal_integers, "Hexadecimal numbers forbidden.");
 			_ptr += 2;
 			auto start = _ptr;
 			dst = sign * (int64_t)strtoull(start, (char**)&_ptr, 16);
@@ -1943,7 +1978,7 @@ namespace configuru
 		}
 
 		if (_ptr[0] == '0' && _ptr[1] == 'b') {
-			parse_assert(_options.binary_integers, "Binary numbers disabled.");
+			parse_assert(_options.binary_integers, "Binary numbers forbidden.");
 			_ptr += 2;
 			auto start = _ptr;
 			dst = sign * (int64_t)strtoull(start, (char**)&_ptr, 2);
@@ -1975,7 +2010,7 @@ namespace configuru
 
 		if (_ptr[0] == '@') {
 			// C# style verbatim string - everything until the next " except "" which is ":
-			parse_assert(_options.str_csharp_verbatim, "C# @-style verbatim strings disabled.");
+			parse_assert(_options.str_csharp_verbatim, "C# @-style verbatim strings forbidden.");
 			_ptr += 1;
 			swallow('"');
 
@@ -2009,7 +2044,7 @@ namespace configuru
 
 		if (_ptr[1] == '"' && _ptr[2] == '"') {
 			// Multiline string - everything until the next """:
-			parse_assert(_options.str_python_multiline, "Python \"\"\"-style multiline strings disabled.");
+			parse_assert(_options.str_python_multiline, "Python \"\"\"-style multiline strings forbidden.");
 			_ptr += 3;
 			const char* start = _ptr;
 			for (;;) {
@@ -2086,7 +2121,7 @@ namespace configuru
 						parse_assert(num_bytes_written > 0, "Bad unicode codepoint");
 					} else if (_ptr[0] == 'U') {
 						// Eight hexadecimal characters
-						parse_assert(_options.str_32bit_unicode, "\\U 32 bit unicodes disabled.");
+						parse_assert(_options.str_32bit_unicode, "\\U 32 bit unicodes forbidden.");
 						_ptr += 1;
 						uint64_t unicode = parse_hex(8);
 						auto num_bytes_written = encode_utf8(str, unicode);
@@ -2124,7 +2159,7 @@ namespace configuru
 
 	void Parser::parse_macro(Config& dst)
 	{
-		parse_assert(_options.allow_macro, "#macros disabled.");
+		parse_assert(_options.allow_macro, "#macros forbidden.");
 
 		swallow("#include", "Expected '#include'");
 		skip_white_ignore_comments();

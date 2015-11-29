@@ -25,6 +25,43 @@ This config library is unique in a few ways:
 		auto color = cfg.get_or("color", Color(0, 0, 0));
 		cfg.check_dangling(); // Will warn about how we never read "colour",
 
+Error messages
+--------------
+Configuru prides itself on great error messages both for parse errors and for value errors (expecting one thing and getting another). Example parse errors:
+
+	equal_in_map.cfg:1:16: Expected : after object key
+	{ "is_this_ok" = true }
+	               ^
+
+	bad_escape.json:1:9: Unknown escape character 'x'
+	{"42":"\x42"}
+	        ^
+
+	no_quotes.json:2:22: Expected value
+	   "forgotten_quotes": here
+	                       ^
+
+	trucated_key.json:1:2: Unterminated string
+	{"X
+	 ^
+
+	single_line_comment.cfg:1:4: Single line comments forbidden.
+	{} // Blah-bla
+	   ^
+
+	unary_plus.cfg:1:1: Prefixing numbers with + is forbidden.
+	+42
+	^
+
+Similarily, using a parsed Config value in the wrong way produces nice error messages:
+
+Accessing a bool beleiving it to be a float: `config.json:2: Expected float, got bool`. Note that the line of the file where they value is defined is mentioned.
+
+Accessing a key which has not been set: `config.json:1: Failed to find key 'does_not_exist'`. Again, the line where the object is defined at is mentioned.
+
+
+
+
 Usage (general):
 ----------------
 For using:

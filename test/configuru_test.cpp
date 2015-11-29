@@ -5,12 +5,6 @@
 #define LOGURU_IMPLEMENTATION 1
 #include "loguru.hpp"
 
-inline void on_configuru_error(const std::string& msg)
-{
-	ABORT_F("%s", msg.c_str());
-}
-
-#define CONFIGURU_ONERROR(message_str) on_configuru_error(message_str)
 #define CONFIGURU_ASSERT(test) CHECK_F(test)
 
 #define CONFIGURU_IMPLEMENTATION 1
@@ -32,31 +26,39 @@ std::vector<fs::path> list_files(fs::path directory, std::string extension)
     return result;
 }
 
-void test(FormatOptions options, bool should_pass, fs::path path, size_t& num_run, size_t& num_failed)
+void test_code(std::string test_name, bool should_pass, size_t& num_run, size_t& num_failed, std::function<void()> code)
 {
 	try {
-		auto config = configuru::parse_config_file(path.string(), options);
+		code();
+
 		if (should_pass) {
-			std::cout << loguru::terminal_green() << "PASS: " << loguru::terminal_reset() << path.filename() << std::endl;
+			std::cout << loguru::terminal_green() << "PASS: " << loguru::terminal_reset() << test_name << std::endl;
 		} else {
-			std::cout <<loguru::terminal_red() <<  "SHOULD NOT HAVE PARSED: " << loguru::terminal_reset() << path.filename() << std::endl;
+			std::cout <<loguru::terminal_red() <<  "SHOULD NOT HAVE PARSED: " << loguru::terminal_reset() << test_name << std::endl;
 			num_failed += 1;
 		}
 	} catch (std::exception& e) {
 		if (should_pass) {
-			std::cout << loguru::terminal_red() << "FAILED: " << loguru::terminal_reset() << path.filename() << ": " << e.what() << std::endl << std::endl;
+			std::cout << loguru::terminal_red() << "FAILED: " << loguru::terminal_reset() << test_name << ": " << e.what() << std::endl << std::endl;
 			num_failed += 1;
 		} else {
-			std::cout << loguru::terminal_green() << "PASS: " << loguru::terminal_reset() << path.filename() << ": " << e.what() << std::endl << std::endl;
+			std::cout << loguru::terminal_green() << "PASS: " << loguru::terminal_reset() << test_name << ": " << e.what() << std::endl << std::endl;
 		}
 	}
-		num_run += 1;
+	num_run += 1;
+}
+
+void test_parse(FormatOptions options, bool should_pass, fs::path path, size_t& num_run, size_t& num_failed)
+{
+	test_code(path.filename().string(), should_pass, num_run, num_failed, [&](){
+		configuru::parse_config_file(path.string(), options);
+	});
 }
 
 void test_all_in(FormatOptions options, bool should_pass, fs::path dir, std::string extension, size_t& num_run, size_t& num_failed)
 {
 	for (auto path : list_files(dir, extension)) {
-		test(options, should_pass, path.string(), num_run, num_failed);
+		test_parse(options, should_pass, path.string(), num_run, num_failed);
 	}
 }
 
@@ -65,13 +67,29 @@ void test_special(size_t& num_run, size_t& num_failed)
 	auto format = configuru::JSON;
 	format.enforce_indentation = true;
 	format.indentation = "\t";
-	test(format, false, "../../test_suite/special/two_spaces_indentation.json", num_run, num_failed);
+	test_parse(format, false, "../../test_suite/special/two_spaces_indentation.json", num_run, num_failed);
 
 	format.indentation = "    ";
-	test(format, false, "../../test_suite/special/two_spaces_indentation.json", num_run, num_failed);
+	test_parse(format, false, "../../test_suite/special/two_spaces_indentation.json", num_run, num_failed);
 
 	format.indentation = "  ";
-	test(format, true, "../../test_suite/special/two_spaces_indentation.json", num_run, num_failed);
+	test_parse(format, true, "../../test_suite/special/two_spaces_indentation.json", num_run, num_failed);
+}
+
+void test_bad_usage(size_t& num_run, size_t& num_failed)
+{
+	auto config = configuru::parse_config_file("../../test_suite/special/config.json", configuru::JSON);
+	test_code("access_bool_as_bool", true, num_run, num_failed, [&]{
+		auto b = (bool)config["some_bool"];
+		(void)b;
+	});
+	test_code("access_bool_as_float", false, num_run, num_failed, [&]{
+		auto f = (float)config["some_bool"];
+		(void)f;
+	});
+	test_code("key_not_found", false, num_run, num_failed, [&]{
+		std::cout << (float)config["does_not_exist"];
+	});
 }
 
 void run_unit_tests()
@@ -98,6 +116,8 @@ void run_unit_tests()
 	std::cout << std::endl << std::endl;
 
 	test_special(num_run, num_failed);
+
+	test_bad_usage(num_run, num_failed);
 
 	if (num_failed == 0) {
 		printf("%s%lu/%lu tests passed!%s\n", loguru::terminal_green(), num_run, num_run, loguru::terminal_reset());
