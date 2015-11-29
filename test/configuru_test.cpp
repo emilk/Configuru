@@ -28,6 +28,7 @@ std::vector<fs::path> list_files(fs::path directory, std::string extension)
             result.push_back(it->path());
         }
     }
+    std::sort(result.begin(), result.end());
     return result;
 }
 

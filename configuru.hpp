@@ -184,6 +184,19 @@ namespace configuru
 	using Comment = std::string;
 	using Comments = std::vector<Comment>;
 
+	struct ConfigComments
+	{
+		// Comments on preceeding lines.
+		// Like this.
+		Comments prefix;
+		Comments postfix; // After the value, on the same line. Like this.
+		Comments pre_end_brace; // Before the closing } or ]
+
+		bool empty() const;
+
+		void append(ConfigComments&& other);
+	};
+
 	class Config;
 
 	template<typename T>
@@ -247,7 +260,7 @@ namespace configuru
 		Config(std::string str) : _type(String) {
 			_u.str = new std::string(move(str));
 		}
-		
+
 		Config(std::initializer_list<Config> values) : _type(Invalid) {
 			if (values.size() == 0) {
 				CONFIGURU_ONERROR("Can't deduce object or array with empty initializer array.");
@@ -521,12 +534,6 @@ namespace configuru
 
 		void mark_accessed(bool v) const;
 
-		// Comments on preceeding lines.
-		// Like this.
-		Comments prefix_comments;
-		Comments postfix_comments; // After the value, on the same line. Like this.
-		Comments pre_end_brace_comments; // Before the closing } or ]
-
 		inline void check(bool b, const char* msg) const
 		{
 			if (!b) {
@@ -538,6 +545,29 @@ namespace configuru
 
 		const char* debug_descr() const;
 
+		bool has_comments() const
+		{
+			return _comments && !_comments->empty();
+		}
+
+		ConfigComments& comments()
+		{
+			if (!_comments) {
+				_comments.reset(new ConfigComments());
+			}
+			return *_comments;
+		}
+
+		const ConfigComments& comments() const
+		{
+			static const ConfigComments s_empty {};
+			if (_comments) {
+				return *_comments;
+			} else {
+				return s_empty;
+			}
+		}
+
 	private:
 		void on_error(const std::string& msg) const;
 
@@ -547,6 +577,8 @@ namespace configuru
 		void free();
 
 	private:
+		using ConfigComments_UP = std::unique_ptr<ConfigComments>;
+
 		Type  _type = Invalid;
 
 		union {
@@ -554,15 +586,18 @@ namespace configuru
 			int64_t        i;
 			double         f;
 			std::string*   str;
-			ConfigObject*     object;
-			ConfigArray*    array;
-			BadLookupInfo* bad_lookup; // In case of BadLookupType
+			ConfigObject*  object;
+			ConfigArray*   array;
+			BadLookupInfo* bad_lookup;
 		} _u;
 
-		DocInfo_SP _doc; // So we can name the file
-		unsigned   _line = (unsigned)-1; // Where in the source, or -1. Lines are 1-indexed.
+		DocInfo_SP        _doc; // So we can name the file
+		unsigned          _line = (unsigned)-1; // Where in the source, or -1. Lines are 1-indexed.
+	public:
+		ConfigComments_UP _comments;
+	private:
 
-		static Config s_invalid;
+		static Config s_invalid; // TODO: remove
 	};
 
 	// ------------------------------------------------------------------------
@@ -807,13 +842,11 @@ namespace configuru
 
 	void Config::swap(Config& o) noexcept
 	{
-		prefix_comments.swap(o.prefix_comments);
-		postfix_comments.swap(o.postfix_comments);
-		pre_end_brace_comments.swap(o.pre_end_brace_comments);
-		std::swap(_type, o._type);
-		std::swap(_u,    o._u);
-		std::swap(_doc,  o._doc);
-		std::swap(_line, o._line);
+		std::swap(_type,     o._type);
+		std::swap(_u,        o._u);
+		std::swap(_doc,      o._doc);
+		std::swap(_line,     o._line);
+		std::swap(_comments, o._comments);
 	}
 
 	Config& Config::operator=(const Config& o)
@@ -829,11 +862,13 @@ namespace configuru
 			if (_type == Array)          { _u.array->ref_count += 1; }
 			if (_type == Object)           { _u.object->ref_count  += 1; }
 		}
-		_doc  = o._doc;
-		_line = o._line;
-		prefix_comments        = o.prefix_comments;
-		postfix_comments       = o.postfix_comments;
-		pre_end_brace_comments = o.pre_end_brace_comments;
+		_doc      = o._doc;
+		_line     = o._line;
+		if (o._comments) {
+			_comments.reset(new ConfigComments(*o._comments));
+		} else {
+			_comments = nullptr;
+		}
 		return *this;
 	}
 
@@ -1076,15 +1111,29 @@ namespace configuru
 
 using namespace configuru;
 
-void append(Comments& a, Comments&& b)
-{
-	for (auto&& entry : b) {
-		a.emplace_back(std::move(entry));
-	}
-}
-
 namespace configuru
 {
+	void append(Comments& a, Comments&& b)
+	{
+		for (auto&& entry : b) {
+			a.emplace_back(std::move(entry));
+		}
+	}
+
+	bool ConfigComments::empty() const
+	{
+		return prefix.empty()
+		    && postfix.empty()
+		    && pre_end_brace.empty();
+	}
+
+	void ConfigComments::append(ConfigComments&& other)
+	{
+		configuru::append(this->prefix,        std::move(other.prefix));
+		configuru::append(this->postfix,       std::move(other.postfix));
+		configuru::append(this->pre_end_brace, std::move(other.pre_end_brace));
+	}
+
 	// Returns the number of bytes written, or 0 on error
 	size_t encode_utf8(std::string& dst, uint64_t c)
 	{
@@ -1165,19 +1214,22 @@ namespace configuru
 			int indentation;
 			return skip_white(nullptr, indentation, false);
 		}
-
-		bool skip_pre_white(Comments* out_comments, int& out_indentation) {
-			return skip_white(out_comments, out_indentation, false);
-		}
-		bool skip_post_white(Comments* out_comments) {
-			int indentation;
-			return skip_white(out_comments, indentation, true);
-		}
 		bool skip_pre_white(Config* config, int& out_indentation) {
-			return skip_pre_white(&config->prefix_comments, out_indentation);
+			Comments comments;
+			bool did_skip = skip_white(&comments, out_indentation, false);
+			if (!comments.empty()) {
+				config->comments().prefix = comments;
+			}
+			return did_skip;
 		}
 		bool skip_post_white(Config* config) {
-			return skip_post_white(&config->postfix_comments);
+			Comments comments;
+			int indentation;
+			bool did_skip = skip_white(&comments, indentation, true);
+			if (!comments.empty()) {
+				config->comments().postfix = comments;
+			}
+			return did_skip;
 		}
 
 		Config top_level();
@@ -1505,9 +1557,7 @@ namespace configuru
 		if (!is_object && ret.array_size() == 0) {
 			if (_options.empty_file) {
 				auto empty_object = Config::object();
-				append(empty_object.prefix_comments,        std::move(ret.prefix_comments));
-				append(empty_object.postfix_comments,       std::move(ret.postfix_comments));
-				append(empty_object.pre_end_brace_comments, std::move(ret.pre_end_brace_comments));
+				empty_object._comments = std::move(ret._comments);
 				return empty_object;
 			} else {
 				throw_error("Empty file");
@@ -1517,9 +1567,9 @@ namespace configuru
 		if (!is_object && ret.array_size() == 1) {
 			// A single value - not an array after all:
 			Config first( std::move(ret[0]) );
-			append(first.prefix_comments,        std::move(ret.prefix_comments));
-			append(first.postfix_comments,       std::move(ret.postfix_comments));
-			append(first.pre_end_brace_comments, std::move(ret.pre_end_brace_comments));
+			if (ret.has_comments()) {
+				first.comments().append(std::move(ret.comments()));
+			}
 			return first;
 		}
 
@@ -1628,12 +1678,16 @@ namespace configuru
 				if (line_indentation >= 0 && _indentation - 1 != line_indentation) {
 					throw_indentation_error(_indentation - 1, line_indentation);
 				}
-				array.pre_end_brace_comments = value.prefix_comments;
+				if (value.has_comments()) {
+					array.comments().pre_end_brace = value.comments().prefix;
+				}
 				break;
 			}
 
 			if (!_ptr[0]) {
-				array.pre_end_brace_comments = value.prefix_comments;
+				if (value.has_comments()) {
+					array.comments().pre_end_brace = value.comments().prefix;
+				}
 				break;
 			}
 
@@ -1703,12 +1757,16 @@ namespace configuru
 				if (line_indentation >= 0 && _indentation - 1 != line_indentation) {
 					throw_indentation_error(_indentation - 1, line_indentation);
 				}
-				object.pre_end_brace_comments = value.prefix_comments;
+				if (value.has_comments()) {
+					object.comments().pre_end_brace = value.comments().prefix;
+				}
 				break;
 			}
 
 			if (!_ptr[0]) {
-				object.pre_end_brace_comments = value.prefix_comments;
+				if (value.has_comments()) {
+					object.comments().pre_end_brace = value.comments().prefix;
+				}
 				break;
 			}
 
@@ -2129,8 +2187,7 @@ namespace configuru
 	bool is_simple(const Config& var)
 	{
 		if (var.is_array() || var.is_object()) { return false; }
-		if (!var.prefix_comments.empty())  { return false; }
-		if (!var.postfix_comments.empty()) { return false; }
+		if (var.has_comments()) { return false; }
 		return true;
 	}
 
@@ -2157,6 +2214,11 @@ namespace configuru
 			}
 		}
 		return true;
+	}
+
+	bool has_pre_end_brace_comments(const Config& cfg)
+	{
+		return cfg.has_comments() && !cfg.comments().pre_end_brace.empty();
 	}
 
 	struct Writer
@@ -2208,7 +2270,7 @@ namespace configuru
 			}
 
 			if (write_prefix) {
-				write_prefix_comments(indent, config.prefix_comments);
+				write_prefix_comments(indent, config.comments().prefix);
 			}
 
 			if (config.is_null()) {
@@ -2222,7 +2284,7 @@ namespace configuru
 			} else if (config.is_string()) {
 				write_string(config.as_string());
 			} else if (config.is_array()) {
-				if (config.array_size() == 0 && config.pre_end_brace_comments.empty()) {
+				if (config.array_size() == 0 && !has_pre_end_brace_comments(config)) {
 					_ss << "[ ]";
 				} else if (is_simple_array(config)) {
 					_ss << "[ ";
@@ -2235,13 +2297,13 @@ namespace configuru
 							_ss << ", ";
 						}
 					}
-					write_pre_brace_comments(indent + 1, config.pre_end_brace_comments);
+					write_pre_brace_comments(indent + 1, config.comments().pre_end_brace);
 					_ss << "]";
 				} else {
 					_ss << "[\n";
 					auto&& array = config.as_array();
 					for (size_t i = 0; i < array.size(); ++i) {
-						write_prefix_comments(indent + 1, array[i].prefix_comments);
+						write_prefix_comments(indent + 1, array[i].comments().prefix);
 						write_indent(indent + 1);
 						write_value(indent + 1, array[i], false, true);
 						if (_options.array_omit_comma || i + 1 == array.size()) {
@@ -2250,12 +2312,12 @@ namespace configuru
 							_ss << ",\n";
 						}
 					}
-					write_pre_brace_comments(indent + 1, config.pre_end_brace_comments);
+					write_pre_brace_comments(indent + 1, config.comments().pre_end_brace);
 					write_indent(indent);
 					_ss << "]";
 				}
 			} else if (config.is_object()) {
-				if (config.object_size() == 0 && config.pre_end_brace_comments.empty()) {
+				if (config.object_size() == 0 && !has_pre_end_brace_comments(config)) {
 					_ss << "{ }";
 				} else {
 					_ss << "{\n";
@@ -2268,7 +2330,7 @@ namespace configuru
 			}
 
 			if (write_postfix) {
-				write_postfix_comments(indent, config.postfix_comments);
+				write_postfix_comments(indent, config.comments().postfix);
 			}
 		}
 
@@ -2294,7 +2356,7 @@ namespace configuru
 			size_t i = 0;
 			for (auto&& it : pairs) {
 				auto&& value = it->second.value;
-				write_prefix_comments(indent, value.prefix_comments);
+				write_prefix_comments(indent, value.comments().prefix);
 				write_indent(indent);
 				write_key(it->first);
 				if (_options.omit_colon_before_object && value.is_object() && value.object_size() != 0) {
@@ -2314,7 +2376,7 @@ namespace configuru
 				i += 1;
 			}
 
-			write_pre_brace_comments(indent, config.pre_end_brace_comments);
+			write_pre_brace_comments(indent, config.comments().pre_end_brace);
 		}
 
 		void write_key(const std::string& str)
