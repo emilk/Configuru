@@ -146,6 +146,8 @@ Tabs anywhere else is not allowed.
 		std::cerr << where << "Key '" << key << "' never accessed" << std::endl
 #endif // CONFIGURU_ON_DANGLING
 
+#define CONFIGURU_NORETURN __attribute__((noreturn))
+
 namespace configuru
 {
 	struct DocInfo;
@@ -176,9 +178,9 @@ namespace configuru
 	template<typename Config_T>
 	struct Config_Entry
 	{
-		Config_T              value;
-		unsigned              nr       = BAD_ENTRY; // Size of the object prior to adding this entry
-		mutable bool          accessed = false;     // Set to true if accessed.
+		Config_T     value;
+		unsigned     nr       = BAD_ENTRY; // Size of the object prior to adding this entry
+		mutable bool accessed = false;     // Set to true if accessed.
 	};
 
 	using Comment = std::string;
@@ -223,128 +225,50 @@ namespace configuru
 		using ConfigObjectImpl = std::unordered_map<std::string, ObjectEntry>;
 		struct ConfigArray {
 			std::atomic<unsigned> ref_count { 1 };
-			ConfigArrayImpl        impl;
+			ConfigArrayImpl       impl;
 		};
 		struct ConfigObject {
 			std::atomic<unsigned> ref_count { 1 };
-			ConfigObjectImpl        impl;
+			ConfigObjectImpl      impl;
 		};
 
 		// ----------------------------------------
 		// Constructors:
 
-		Config() : _type(Invalid) { }
-		Config(std::nullptr_t) : _type(Null) { }
-		Config(bool b) : _type(Bool) {
-			_u.b = b;
-		}
-		Config(int i) : _type(Int) {
-			_u.i = i;
-		}
-		Config(int64_t i) : _type(Int) {
-			_u.i = i;
-		}
-		Config(size_t i) : _type(Int) {
+		Config()               : _type(Invalid) { }
+		Config(std::nullptr_t) : _type(Null)    { }
+		Config(double  f) : _type(Float) { _u.f = f; }
+		Config(bool    b) : _type(Bool)  { _u.b = b; }
+		Config(int     i) : _type(Int)   { _u.i = i; }
+		Config(int64_t i) : _type(Int)   { _u.i = i; }
+		Config(size_t  i) : _type(Int)
+		{
 			if ((i & 0x8000000000000000ull) != 0) {
 				CONFIGURU_ONERROR("Integer too large to fit into 63 bits");
 			}
 			_u.i = static_cast<int64_t>(i);
 		}
-		Config(double f) : _type(Float) {
-			_u.f = f;
-		}
-		Config(const char* str) : _type(String) {
-			CONFIGURU_ASSERT(str != nullptr);
-			_u.str = new std::string(str);
-		}
-		Config(std::string str) : _type(String) {
-			_u.str = new std::string(move(str));
-		}
+		Config(const char* str);
+		Config(std::string str);
 
-		Config(std::initializer_list<Config> values) : _type(Invalid) {
-			if (values.size() == 0) {
-				CONFIGURU_ONERROR("Can't deduce object or array with empty initializer array.");
-			}
+		Config(std::initializer_list<Config> values);
 
-			bool is_object = true;
+		// Used by the parser - no need to use directly.
+		void make_object();
+		void make_array();
+		void tag(const DocInfo_SP& doc, unsigned line, unsigned column);
 
-			for (const auto& v : values)
-			{
-				if (!v.is_array()       ||
-				    v.array_size() != 2 ||
-				    !v[0].is_string())
-				{
-					is_object = false;
-					break;
-				}
-			}
+		// Preferred way to create objects!
+		static Config object();
+		static Config object(std::initializer_list<std::pair<std::string, Config>> values);
 
-			if (is_object) {
-				make_object();
-				for (auto&& v : values) {
-					(*this)[(std::string)v[0]] = std::move(v[1]);
-				}
-			} else {
-				make_array();
-				for (auto&& v : values) {
-					push_back(std::move(v));
-				}
-			}
-		}
-
-		void make_object() {
-			assert_type(Invalid);
-			_type = Object;
-			_u.object = new ConfigObject();
-		}
-
-		void make_array() {
-			assert_type(Invalid);
-			_type = Array;
-			_u.array = new ConfigArray();
-		}
-
-		static Config object() {
-			Config ret;
-			ret.make_object();
-			return ret;
-		}
-
-		static Config object(std::initializer_list<std::pair<std::string, Config>> values) {
-			Config ret;
-			ret.make_object();
-			for (auto&& p : values) {
-				ret[(std::string)p.first] = std::move(p.second);
-			}
-			return ret;
-		}
-
-		static Config array() {
-			Config ret;
-			ret.make_array();
-			return ret;
-		}
-
-		static Config array(std::initializer_list<Config> values) {
-			Config ret;
-			ret.make_array();
-			for (auto&& v : values) {
-				ret.push_back(std::move(v));
-			}
-			return ret;
-		}
-
-		void tag(const DocInfo_SP& doc, unsigned line, unsigned column) {
-			_doc = doc;
-			_line = line;
-			(void)column; // TODO: include this info too.
-		}
+		// Preferred way to create arrays!
+		static Config array();
+		static Config array(std::initializer_list<Config> values);
 
 		// ----------------------------------------
 
-		~Config() {
-			free();
-		}
+		~Config() { free(); }
 
 		Config(const Config& o);
 
@@ -569,7 +493,7 @@ namespace configuru
 		}
 
 	private:
-		void on_error(const std::string& msg) const;
+		void on_error(const std::string& msg) const CONFIGURU_NORETURN;
 
 		static const char* type_str(Type t);
 
@@ -595,9 +519,6 @@ namespace configuru
 		unsigned          _line = (unsigned)-1; // Where in the source, or -1. Lines are 1-indexed.
 	public:
 		ConfigComments_UP _comments;
-	private:
-
-		static Config s_invalid; // TODO: remove
 	};
 
 	// ------------------------------------------------------------------------
@@ -691,10 +612,10 @@ namespace configuru
 
 	// ----------------------------------------------------------
 
-	class parse_error : public std::exception
+	class ParseError : public std::exception
 	{
 	public:
-		parse_error(DocInfo_SP doc, unsigned line, unsigned column, std::string msg)
+		ParseError(DocInfo_SP doc, unsigned line, unsigned column, std::string msg)
 		: _line(line), _column(column)
 		{
 			_what = doc->filename + ":" + std::to_string(line) + ":" + std::to_string(column);
@@ -702,7 +623,8 @@ namespace configuru
 			_what += ": " + msg;
 		}
 
-		const char* what() const noexcept override {
+		const char* what() const noexcept override
+		{
 			return _what.c_str();
 		}
 
@@ -830,11 +752,11 @@ namespace configuru
 	};
 
 	// Zero-ended Utf-8 encoded string of characters.
-	Config parse_config(const char* str, const FormatOptions& options, DocInfo _doc, ParseInfo& info) throw(parse_error);
-	Config parse_config(const char* str, const FormatOptions& options, const char* name) throw(parse_error);
-
-	Config parse_config_file(const std::string& path, const FormatOptions& options, DocInfo_SP doc, ParseInfo& info) throw(parse_error);
-	Config parse_config_file(const std::string& path, const FormatOptions& options) throw(parse_error);
+	// May throw ParseError.
+	Config parse_config(const char* str, const FormatOptions& options, DocInfo _doc, ParseInfo& info);
+	Config parse_config(const char* str, const FormatOptions& options, const char* name);
+	Config parse_config_file(const std::string& path, const FormatOptions& options, DocInfo_SP doc, ParseInfo& info);
+	Config parse_config_file(const std::string& path, const FormatOptions& options);
 
 	// ----------------------------------------------------------
 	// Writes in a pretty format with perfect reversibility of everything (including numbers).
@@ -884,7 +806,105 @@ namespace configuru
 		std::atomic<unsigned> ref_count { 1 };
 	};
 
-	Config Config::s_invalid;
+	Config::Config(const char* str) : _type(String)
+	{
+		CONFIGURU_ASSERT(str != nullptr);
+		_u.str = new std::string(str);
+	}
+
+	Config::Config(std::string str) : _type(String)
+	{
+		_u.str = new std::string(move(str));
+	}
+
+	Config::Config(std::initializer_list<Config> values) : _type(Invalid)
+	{
+		if (values.size() == 0) {
+			CONFIGURU_ONERROR("Can't deduce object or array with empty initializer array.");
+		}
+
+		bool is_object = true;
+
+		for (const auto& v : values)
+		{
+			if (!v.is_array()       ||
+			    v.array_size() != 2 ||
+			    !v[0].is_string())
+			{
+				is_object = false;
+				break;
+			}
+		}
+
+		if (is_object) {
+			make_object();
+			for (auto&& v : values) {
+				(*this)[(std::string)v[0]] = std::move(v[1]);
+			}
+		} else {
+			make_array();
+			for (auto&& v : values) {
+				push_back(std::move(v));
+			}
+		}
+	}
+
+	void Config::make_object()
+	{
+		assert_type(Invalid);
+		_type = Object;
+		_u.object = new ConfigObject();
+	}
+
+	void Config::make_array()
+	{
+		assert_type(Invalid);
+		_type = Array;
+		_u.array = new ConfigArray();
+	}
+
+	Config Config::object()
+	{
+		Config ret;
+		ret.make_object();
+		return ret;
+	}
+
+	Config Config::object(std::initializer_list<std::pair<std::string, Config>> values)
+	{
+		Config ret;
+		ret.make_object();
+		for (auto&& p : values) {
+			ret[(std::string)p.first] = std::move(p.second);
+		}
+		return ret;
+	}
+
+	Config Config::array()
+	{
+		Config ret;
+		ret.make_array();
+		return ret;
+	}
+
+	Config Config::array(std::initializer_list<Config> values)
+	{
+		Config ret;
+		ret.make_array();
+		for (auto&& v : values) {
+			ret.push_back(std::move(v));
+		}
+		return ret;
+	}
+
+	void Config::tag(const DocInfo_SP& doc, unsigned line, unsigned column)
+	{
+		_doc = doc;
+		_line = line;
+		(void)column; // TODO: include this info too.
+	}
+
+	// ----------------------------------------
 
 	Config::Config(const Config& o) : _type(Invalid)
 	{
@@ -929,7 +949,6 @@ namespace configuru
 		auto it = object.find(key);
 		if (it == object.end()) {
 			on_error("Key '" + key + "' not in object");
-			return s_invalid;
 		} else {
 			const auto& entry = it->second;
 			entry.accessed = true;
@@ -1132,6 +1151,7 @@ namespace configuru
 	void Config::on_error(const std::string& msg) const
 	{
 		CONFIGURU_ONERROR(where() + msg);
+		abort(); // We shouldn't get here.
 	}
 
 	void Config::assert_type(Type t) const
@@ -1351,7 +1371,7 @@ namespace configuru
 			}
 			orientation += "^";
 
-			throw parse_error(_doc, _line_nr, column(), desc + "\n" + orientation);
+			throw ParseError(_doc, _line_nr, column(), desc + "\n" + orientation);
 		}
 
 		void throw_indentation_error(int found_tabs, int expected_tabs) {
@@ -2165,13 +2185,13 @@ namespace configuru
 
 	// ----------------------------------------------------------------------------------------
 
-	Config parse_config(const char* str, const FormatOptions& options, DocInfo_SP doc, ParseInfo& info) throw(parse_error)
+	Config parse_config(const char* str, const FormatOptions& options, DocInfo_SP doc, ParseInfo& info)
 	{
 		Parser p(str, options, doc, info);
 		return p.top_level();
 	}
 
-	Config parse_config(const char* str, const FormatOptions& options, const char* name) throw(parse_error)
+	Config parse_config(const char* str, const FormatOptions& options, const char* name)
 	{
 		ParseInfo info;
 		return parse_config(str, options, std::make_shared<DocInfo>(name), info);
@@ -2195,14 +2215,14 @@ namespace configuru
 		return contents;
 	}
 
-	Config parse_config_file(const std::string& path, const FormatOptions& options, DocInfo_SP doc, ParseInfo& info) throw(parse_error)
+	Config parse_config_file(const std::string& path, const FormatOptions& options, DocInfo_SP doc, ParseInfo& info)
 	{
 		// auto file = util::FILEWrapper::read_text_file(path);
 		auto file = read_text_file(path.c_str());
 		return parse_config(file.c_str(), options, doc, info);
 	}
 
-	Config parse_config_file(const std::string& path, const FormatOptions& options) throw(parse_error)
+	Config parse_config_file(const std::string& path, const FormatOptions& options)
 	{
 		ParseInfo info;
 		return parse_config_file(path, options, std::make_shared<DocInfo>(path), info);

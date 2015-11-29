@@ -93,7 +93,6 @@ Goals:
 # TODO:
 * Code cleanup.
 * Dissallow having commas for just some entries in an array or object.
-* Customize indentation (tabs, spaces, ...).
 
 
 Config format
