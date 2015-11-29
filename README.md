@@ -92,7 +92,7 @@ Goals:
 
 # TODO:
 * Code cleanup.
-* Dissallow space before colon in object.
+* Dissallow having commas for just some entries in an array or object.
 * Customize indentation (tabs, spaces, ...).
 
 

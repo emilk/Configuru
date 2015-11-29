@@ -32,54 +32,72 @@ std::vector<fs::path> list_files(fs::path directory, std::string extension)
     return result;
 }
 
-void test(FormatOptions options, bool should_pass, fs::path dir, std::string extension, size_t& num_run, size_t& num_failed)
+void test(FormatOptions options, bool should_pass, fs::path path, size_t& num_run, size_t& num_failed)
 {
-	for (auto path : list_files(dir, extension))
-	{
-		try {
-			auto config = configuru::parse_config_file(path.string(), options);
-			if (should_pass) {
-				std::cout << loguru::terminal_green() << "PASS: " << loguru::terminal_reset() << path.filename() << std::endl;
-			} else {
-				std::cout <<loguru::terminal_red() <<  "SHOULD NOT HAVE PARSED: " << loguru::terminal_reset() << path.filename() << std::endl;
-				num_failed += 1;
-			}
-		} catch (std::exception& e) {
-			if (should_pass) {
-				std::cout << loguru::terminal_red() << "FAILED: " << loguru::terminal_reset() << path.filename() << ": " << e.what() << std::endl << std::endl;
-				num_failed += 1;
-			} else {
-				std::cout << loguru::terminal_green() << "PASS: " << loguru::terminal_reset() << path.filename() << ": " << e.what() << std::endl << std::endl;
-			}
+	try {
+		auto config = configuru::parse_config_file(path.string(), options);
+		if (should_pass) {
+			std::cout << loguru::terminal_green() << "PASS: " << loguru::terminal_reset() << path.filename() << std::endl;
+		} else {
+			std::cout <<loguru::terminal_red() <<  "SHOULD NOT HAVE PARSED: " << loguru::terminal_reset() << path.filename() << std::endl;
+			num_failed += 1;
 		}
-		num_run += 1;
+	} catch (std::exception& e) {
+		if (should_pass) {
+			std::cout << loguru::terminal_red() << "FAILED: " << loguru::terminal_reset() << path.filename() << ": " << e.what() << std::endl << std::endl;
+			num_failed += 1;
+		} else {
+			std::cout << loguru::terminal_green() << "PASS: " << loguru::terminal_reset() << path.filename() << ": " << e.what() << std::endl << std::endl;
+		}
 	}
+		num_run += 1;
+}
+
+void test_all_in(FormatOptions options, bool should_pass, fs::path dir, std::string extension, size_t& num_run, size_t& num_failed)
+{
+	for (auto path : list_files(dir, extension)) {
+		test(options, should_pass, path.string(), num_run, num_failed);
+	}
+}
+
+void test_special(size_t& num_run, size_t& num_failed)
+{
+	auto format = configuru::JSON;
+	format.enforce_indentation = true;
+	format.indentation = "\t";
+	test(format, false, "../../test_suite/special/two_spaces_indentation.json", num_run, num_failed);
+
+	format.indentation = "    ";
+	test(format, false, "../../test_suite/special/two_spaces_indentation.json", num_run, num_failed);
+
+	format.indentation = "  ";
+	test(format, true, "../../test_suite/special/two_spaces_indentation.json", num_run, num_failed);
 }
 
 void run_unit_tests()
 {
 	size_t num_run = 0;
 	size_t num_failed = 0;
-	std::cout << "JSON expected to pass:" << std::endl;;
-	test(configuru::JSON, true, "../../test_suite/json_pass",      ".json", num_run, num_failed);
-	test(configuru::JSON, true, "../../test_suite/json_only_pass", ".json", num_run, num_failed);
-	test(configuru::JSON, true, "../../test_suite/cfg_only_fail",  ".cfg", num_run, num_failed);
+	std::cout << "JSON expected to pass:" << std::endl;
+	test_all_in(configuru::JSON, true, "../../test_suite/json_pass",      ".json", num_run, num_failed);
+	test_all_in(configuru::JSON, true, "../../test_suite/json_only_pass", ".json", num_run, num_failed);
 
-	std::cout << std::endl << "JSON expected to fail:" << std::endl;;
-	test(configuru::JSON, false, "../../test_suite/json_fail", ".json", num_run, num_failed);
-	test(configuru::JSON, false, "../../test_suite/cfg_pass",  ".cfg", num_run, num_failed);
-	test(configuru::JSON, false, "../../test_suite/cfg_fail",  ".cfg", num_run, num_failed);
+	std::cout << std::endl << "JSON expected to fail:" << std::endl;
+	test_all_in(configuru::JSON, false, "../../test_suite/json_fail", ".json", num_run, num_failed);
+	test_all_in(configuru::JSON, false, "../../test_suite/cfg_pass",  ".cfg", num_run, num_failed);
+	test_all_in(configuru::JSON, false, "../../test_suite/cfg_fail",  ".cfg", num_run, num_failed);
 
-	std::cout << std::endl << "CFG expected to pass:" << std::endl;;
-	test(configuru::CFG, true,  "../../test_suite/json_pass", ".json", num_run, num_failed);
-	test(configuru::CFG, true,  "../../test_suite/cfg_pass",  ".cfg", num_run, num_failed);
+	std::cout << std::endl << "CFG expected to pass:" << std::endl;
+	test_all_in(configuru::CFG, true,  "../../test_suite/json_pass", ".json", num_run, num_failed);
+	test_all_in(configuru::CFG, true,  "../../test_suite/cfg_pass",  ".cfg", num_run, num_failed);
 
-	std::cout << std::endl << "CFG expected to fail:" << std::endl;;
-	test(configuru::CFG, false, "../../test_suite/json_only_pass", ".json", num_run, num_failed);
-	test(configuru::CFG, false, "../../test_suite/json_fail",      ".json", num_run, num_failed);
-	test(configuru::CFG, false, "../../test_suite/cfg_fail",       ".cfg", num_run, num_failed);
-	test(configuru::CFG, false, "../../test_suite/cfg_only_fail",  ".cfg", num_run, num_failed);
+	std::cout << std::endl << "CFG expected to fail:" << std::endl;
+	test_all_in(configuru::CFG, false, "../../test_suite/json_only_pass", ".json", num_run, num_failed);
+	test_all_in(configuru::CFG, false, "../../test_suite/json_fail",      ".json", num_run, num_failed);
+	test_all_in(configuru::CFG, false, "../../test_suite/cfg_fail",       ".cfg", num_run, num_failed);
 	std::cout << std::endl << std::endl;
+
+	test_special(num_run, num_failed);
 
 	if (num_failed == 0) {
 		printf("%s%lu/%lu tests passed!%s\n", loguru::terminal_green(), num_run, num_run, loguru::terminal_reset());
@@ -110,13 +128,19 @@ void parse_and_print()
 	std::cout << configuru::write_config(cfg, configuru::CFG);
 
 	std::cout << std::endl;
-	std::cout << "// JSON:" << std::endl;
+	std::cout << "// JSON with tabs:" << std::endl;
 	std::cout << configuru::write_config(cfg, configuru::JSON);
 
 	std::cout << std::endl;
-	std::cout << "// Compact JSON:" << std::endl;
+	std::cout << "// JSON with two spaces:" << std::endl;
 	auto format = configuru::JSON;
-	format.compact = true;
+	format.indentation = "  ";
+	std::cout << configuru::write_config(cfg, format);
+
+	std::cout << std::endl;
+	std::cout << "// Compact JSON:" << std::endl;
+	format = configuru::JSON;
+	format.indentation = "";
 	std::cout << configuru::write_config(cfg, format);
 
 	std::cout << std::endl;

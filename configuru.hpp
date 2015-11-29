@@ -720,57 +720,105 @@ namespace configuru
 	{
 		// This struct basically contain all differences with JSON.
 
-		bool enforce_indentation      = true;  // Must indent with tabs?
+		bool        enforce_indentation      = true;  // Must indent with tabs?
 
 		// Top file:
-		bool empty_file               = false; // If true, an empty file is an empty object.
-		bool implicit_top_object      = true;  // Ok with key-value pairs top-level?
-		bool implicit_top_array       = true;  // Ok with several values top-level?
+		bool        empty_file               = false; // If true, an empty file is an empty object.
+		bool        implicit_top_object      = true;  // Ok with key-value pairs top-level?
+		bool        implicit_top_array       = true;  // Ok with several values top-level?
 
 		// Comments:
-		bool single_line_comments     = true;  // Allow this?
-		bool block_comments           = true;  /* Allow this? */
-		bool nesting_block_comments   = true;  // /* Allow /*    this? */ */
+		bool        single_line_comments     = true;  // Allow this?
+		bool        block_comments           = true;  /* Allow this? */
+		bool        nesting_block_comments   = true;  // /* Allow /*    this? */ */
 
 		// Numbers:
-		bool inf                      = true;  // Allow +inf, -inf
-		bool nan                      = true;  // Allow +NaN
-		bool hexadecimal_integers     = true;  // Allow 0xff
-		bool binary_integers          = true;  // Allow 0b1010
-		bool unary_plus               = true;  // Allow +42
+		bool        inf                      = true;  // Allow +inf, -inf
+		bool        nan                      = true;  // Allow +NaN
+		bool        hexadecimal_integers     = true;  // Allow 0xff
+		bool        binary_integers          = true;  // Allow 0b1010
+		bool        unary_plus               = true;  // Allow +42
 
 		// Arrays
-		bool array_omit_comma         = true;  // Allow [1 2 3]
-		bool array_trailing_comma     = true;  // Allow [1, 2, 3,]
+		bool        array_omit_comma         = true;  // Allow [1 2 3]
+		bool        array_trailing_comma     = true;  // Allow [1, 2, 3,]
 
 		// Objects:
-		bool identifiers_keys         = true;  // { is_this_ok: true }
-		bool object_separator_equal   = false; // { "is_this_ok" = true }
-		bool allow_space_before_colon = false; // { "is_this_ok" : true }
-		bool omit_colon_before_object = true;  // { "object" { /* nested */ } }
-		bool object_omit_comma        = true;  // Allow {a:1 b:2}
-		bool object_trailing_comma    = true;  // Allow {a:1, b:2,}
-		bool object_duplicate_keys    = false; // Allow {"a":1, "a":2}
+		bool        identifiers_keys         = true;  // { is_this_ok: true }
+		bool        object_separator_equal   = false; // { "is_this_ok" = true }
+		bool        allow_space_before_colon = false; // { "is_this_ok" : true }
+		bool        omit_colon_before_object = true;  // { "object" { /* nested */ } }
+		bool        object_omit_comma        = true;  // Allow {a:1 b:2}
+		bool        object_trailing_comma    = true;  // Allow {a:1, b:2,}
+		bool        object_duplicate_keys    = false; // Allow {"a":1, "a":2}
 
 		// Strings
-		bool str_csharp_verbatim      = true;  // Allow @"Verbatim\strings"
-		bool str_python_multiline     = true;  // Allow """ Python\nverbatim strings """
-		bool str_32bit_unicode        = true;  // Allow "\U0030dbfd"
+		bool        str_csharp_verbatim      = true;  // Allow @"Verbatim\strings"
+		bool        str_python_multiline     = true;  // Allow """ Python\nverbatim strings """
+		bool        str_32bit_unicode        = true;  // Allow "\U0030dbfd"
 
 		// Special
-		bool allow_macro              = true;  // Allow #include "some_other_file.cfg"
+		bool        allow_macro              = true;  // Allow #include "some_other_file.cfg"
 
 		// When writing:
-		bool write_comments           = true;
-		bool compact                  = false;
+		bool        write_comments           = true;
+
+		/* Indentation should be a single tab,
+		   multiple spaces or an empty string.
+		    An empty string means the output will be compact. */
+		std::string indentation              = "\t";
+
+		bool compact() const { return indentation.empty(); }
 	};
 
 	inline FormatOptions make_json_options()
 	{
 		FormatOptions options;
-		memset(&options, 0, sizeof(options));
-		// Technically object_duplicate_keys should be true, but it is error prone.
+
+		options.enforce_indentation      = false;
+
+		// Top file:
+		options.empty_file               = false;
+		options.implicit_top_object      = false;
+		options.implicit_top_array       = false;
+
+		// Comments:
+		options.single_line_comments     = false;
+		options.block_comments           = false;
+		options.nesting_block_comments   = false;
+
+		// Numbers:
+		options.inf                      = false;
+		options.nan                      = false;
+		options.hexadecimal_integers     = false;
+		options.binary_integers          = false;
+		options.unary_plus               = false;
+
+		// Arrays
+		options.array_omit_comma         = false;
+		options.array_trailing_comma     = false;
+
+		// Objects:
+		options.identifiers_keys         = false;
+		options.object_separator_equal   = false;
 		options.allow_space_before_colon = true;
+		options.omit_colon_before_object = false;
+		options.object_omit_comma        = false;
+		options.object_trailing_comma    = false;
+		options.object_duplicate_keys    = false; // To be 100% JSON compatile, this should be true, but it is error prone.
+
+		// Strings
+		options.str_csharp_verbatim      = false;
+		options.str_python_multiline     = false;
+		options.str_32bit_unicode        = false;
+
+		// Special
+		options.allow_macro              = false;
+
+		// When writing:
+		options.write_comments           = false;
+		options.indentation              = "\t";
+
 		return options;
 	}
 
@@ -1394,37 +1442,19 @@ namespace configuru
 		set_range(IDENT_CHARS, 'A', 'Z');
 		set_range(IDENT_CHARS, '0', '9');
 
-		CONFIGURU_ASSERT(is_reserved_identifier("false"));
-		CONFIGURU_ASSERT(is_reserved_identifier("false,"));
-		CONFIGURU_ASSERT(is_reserved_identifier("false:"));
-		CONFIGURU_ASSERT(is_reserved_identifier("false="));
-		CONFIGURU_ASSERT(is_reserved_identifier("false "));
-		CONFIGURU_ASSERT(!is_reserved_identifier("falsee"));
-		CONFIGURU_ASSERT(!is_reserved_identifier("falsee,"));
-		CONFIGURU_ASSERT(is_reserved_identifier("true"));
-		CONFIGURU_ASSERT(is_reserved_identifier("true,"));
-		CONFIGURU_ASSERT(is_reserved_identifier("true:"));
-		CONFIGURU_ASSERT(is_reserved_identifier("true="));
-		CONFIGURU_ASSERT(is_reserved_identifier("true "));
-		CONFIGURU_ASSERT(!is_reserved_identifier("truee"));
-		CONFIGURU_ASSERT(!is_reserved_identifier("truee,"));
-		CONFIGURU_ASSERT(is_reserved_identifier("null"));
-		CONFIGURU_ASSERT(is_reserved_identifier("null,"));
-		CONFIGURU_ASSERT(is_reserved_identifier("null:"));
-		CONFIGURU_ASSERT(is_reserved_identifier("null="));
-		CONFIGURU_ASSERT(is_reserved_identifier("null "));
-		CONFIGURU_ASSERT(!is_reserved_identifier("nulle"));
-		CONFIGURU_ASSERT(!is_reserved_identifier("nulle,"));
+		CONFIGURU_ASSERT(_options.indentation != "" || !_options.enforce_indentation);
 	}
 
 	// Returns true if we did skip white-space.
-	// out_indentation is the number of *tabs* on the last line we did skip on.
-	// iff out_indentation is -1 there is a non-tab
+	// out_indentation is the depth of indentation on the last line we did skip on.
+	// iff out_indentation is -1 there is a non-tab on the last line.
 	bool Parser::skip_white(Comments* out_comments, int& out_indentation, bool break_on_newline)
 	{
 		auto start_ptr = _ptr;
 		out_indentation = 0;
 		bool found_newline = false;
+
+		const std::string& indentation = _options.indentation;
 
 		for (;;) {
 			if (_ptr[0] == '\n') {
@@ -1446,6 +1476,15 @@ namespace configuru
 				if (break_on_newline) { return true; }
 				found_newline = true;
 			}
+			else if (indentation != "" &&
+			         strncmp(_ptr, indentation.c_str(), indentation.size()) == 0)
+			{
+				_ptr += indentation.size();
+				if (_options.enforce_indentation && indentation == "\t") {
+					parse_assert(out_indentation != -1, "Tabs should only occur on the start of a line!");
+				}
+				++out_indentation;
+			}
 			else if (_ptr[0] == '\t') {
 				++_ptr;
 				if (_options.enforce_indentation) {
@@ -1455,7 +1494,11 @@ namespace configuru
 			}
 			else if (_ptr[0] == ' ') {
 				if (found_newline && _options.enforce_indentation) {
-					throw_error("Found a space at beginning of a line. Indentation must be done using tabs!");
+					if (indentation == "\t") {
+						throw_error("Found a space at beginning of a line. Indentation must be done using tabs!");
+					} else {
+						throw_error("Indentation should be a multiple of " + std::to_string(indentation.size()) + " spaces.");
+					}
 				}
 				++_ptr;
 				out_indentation = -1;
@@ -2248,9 +2291,9 @@ namespace configuru
 
 		void write_indent(unsigned indent)
 		{
-			if (_options.compact) { return; }
+			if (_options.compact()) { return; }
 			for (unsigned i=0; i<indent; ++i) {
-				_ss << "\t";
+				_ss << _options.indentation;
 			}
 		}
 
@@ -2305,20 +2348,20 @@ namespace configuru
 				write_string(config.as_string());
 			} else if (config.is_array()) {
 				if (config.array_size() == 0 && !has_pre_end_brace_comments(config)) {
-					if (_options.compact) {
+					if (_options.compact()) {
 						_ss << "[]";
 					} else {
 						_ss << "[ ]";
 					}
-				} else if (_options.compact || is_simple_array(config)) {
+				} else if (_options.compact() || is_simple_array(config)) {
 					_ss << "[";
-					if (!_options.compact) {
+					if (!_options.compact()) {
 						_ss << " ";
 					}
 					auto&& array = config.as_array();
 					for (size_t i = 0; i < array.size(); ++i) {
 						write_value(indent + 1, array[i], false, true);
-						if (_options.compact) {
+						if (_options.compact()) {
 							if (i + 1 < array.size()) {
 								_ss << ",";
 							}
@@ -2349,13 +2392,13 @@ namespace configuru
 				}
 			} else if (config.is_object()) {
 				if (config.object_size() == 0 && !has_pre_end_brace_comments(config)) {
-					if (_options.compact) {
+					if (_options.compact()) {
 						_ss << "{}";
 					} else {
 						_ss << "{ }";
 					}
 				} else {
-					if (_options.compact) {
+					if (_options.compact()) {
 						_ss << "{";
 					} else {
 						_ss << "{\n";
@@ -2398,7 +2441,7 @@ namespace configuru
 				write_prefix_comments(indent, value.comments().prefix);
 				write_indent(indent);
 				write_key(it->first);
-				if (_options.compact) {
+				if (_options.compact()) {
 					_ss << ":";
 				} else if (_options.omit_colon_before_object && value.is_object() && value.object_size() != 0) {
 					_ss << " ";
@@ -2409,7 +2452,7 @@ namespace configuru
 					}
 				}
 				write_value(indent, value, false, true);
-				if (_options.compact) {
+				if (_options.compact()) {
 					if (i + 1 < pairs.size()) {
 						_ss << ",";
 					}
