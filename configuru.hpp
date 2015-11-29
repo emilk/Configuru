@@ -50,7 +50,7 @@ Usage (parsing):
 
 	const auto& list = cfg["list"];
 	if (cfg["list"].is_list()) {
-		std::cout << "First element: " << cfg["list"][0u];
+		std::cout << "First element: " << cfg["list"][0];
 		for (const Config& element : cfg["list"].as_list()) {
 		}
 	}
@@ -72,8 +72,11 @@ Usage (writing):
 
 	Config cfg = Config::new_map();
 	cfg["pi"] = 3.14;
-	cfg["list"] = Config::new_list();
-	cfg["list"].push_back(Config(42));
+	cfg["list"] = {1, 2, 3};
+	cfg["map"] = {
+		{"key1", "value1"},
+		{"key2", "value2"},
+	};
 	write_config_file("output.cfg", cfg);
 
 
@@ -82,16 +85,13 @@ Config format
 
 Like JSON, but with simplifications. Example file:
 
-```
-values = [1 2 3 4 5 6]
-map {
-	nested_key = +inf
-}
-python_style  = """This is a string
-which spans many lines."""
-"C# style" = @"Also nice for \ and stuff"
-}
-```
+	values: [1 2 3 4 5 6]
+	map {
+		nested_key = +inf
+	}
+	python_style: """This is a string
+	                 which spans many lines."""
+	"C# style": @"Also nice for \ and stuff"
 
 * Top-level can be key-value pairs, or a value.
 * Keys need not be quoted if identifiers.
@@ -123,6 +123,7 @@ Tabs anywhere else is not allowed.
 #ifndef CONFIGURU_HEADER_HPP
 #define CONFIGURU_HEADER_HPP
 
+#include <initializer_list>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -218,17 +219,17 @@ namespace configuru
 		// Constructors:
 
 		Config() : _type(Invalid) { }
-		explicit Config(std::nullptr_t) : _type(Null) { }
-		explicit Config(bool b) : _type(Bool) {
+		Config(std::nullptr_t) : _type(Null) { }
+		Config(bool b) : _type(Bool) {
 			_u.b = b;
 		}
-		explicit Config(int i) : _type(Int) {
+		Config(int i) : _type(Int) {
 			_u.i = i;
 		}
-		explicit Config(int64_t i) : _type(Int) {
+		Config(int64_t i) : _type(Int) {
 			_u.i = i;
 		}
-		explicit Config(size_t i) : _type(Int) {
+		Config(size_t i) : _type(Int) {
 			if ((i & 0x8000000000000000ull) != 0) {
 				CONFIGURU_ONERROR("Integer too large to fit into 63 bits");
 			}
@@ -244,11 +245,35 @@ namespace configuru
 		Config(std::string str) : _type(String) {
 			_u.str = new std::string(move(str));
 		}
-		template<typename T>
-		explicit Config(std::initializer_list<T> values) : _type(Invalid) {
-			make_list();
-			for (auto&& v : values) {
-				push_back(Config(v));
+		
+		Config(std::initializer_list<Config> values) : _type(Invalid) {
+			if (values.size() == 0) {
+				CONFIGURU_ONERROR("Can't deduce map or list with empty initializer list.");
+			}
+
+			bool is_map = true;
+
+			for (const auto& v : values)
+			{
+				if (!v.is_list()       ||
+				    v.list_size() != 2 ||
+				    !v[0].is_string())
+				{
+					is_map = false;
+					break;
+				}
+			}
+
+			if (is_map) {
+				make_map();
+				for (auto&& v : values) {
+					(*this)[(std::string)v[0]] = std::move(v[1]);
+				}
+			} else {
+				make_list();
+				for (auto&& v : values) {
+					push_back(std::move(v));
+				}
 			}
 		}
 
@@ -300,70 +325,6 @@ namespace configuru
 		}
 
 		void swap(Config& o) noexcept;
-
-		Config& operator=(std::nullptr_t)
-		{
-			free();
-			_type = Null;
-			return *this;
-		}
-
-		Config& operator=(bool b)
-		{
-			free();
-			_type = Bool;
-			_u.b = b;
-			return *this;
-		}
-
-		Config& operator=(int i)
-		{
-			free();
-			_type = Int;
-			_u.i = i;
-			return *this;
-		}
-
-		Config& operator=(int64_t i)
-		{
-			free();
-			_type = Int;
-			_u.i = i;
-			return *this;
-		}
-
-		Config& operator=(size_t i)
-		{
-			free();
-			_type = Int;
-			_u.i = i;
-			return *this;
-		}
-
-		Config& operator=(double f)
-		{
-			free();
-			_type = Float;
-			_u.f = f;
-			return *this;
-		}
-
-		Config& operator=(const char* str)
-		{
-			CONFIGURU_ASSERT(str != nullptr);
-			free();
-			_type = String;
-			_u.str = new std::string(str);
-			return *this;
-		}
-
-		Config& operator=(std::string str)
-		{
-			free();
-			_type = String;
-			_u.str = new std::string(move(str));
-			return *this;
-		}
 
 		#ifdef CONFIG_EXTENSION
 			CONFIG_EXTENSION
@@ -455,14 +416,14 @@ namespace configuru
 			return _u.list->impl;
 		}
 
-		Config& operator[](unsigned ix)
+		Config& operator[](size_t ix)
 		{
 			auto&& list = as_list();
 			check(ix < list.size(), "Out of range");
 			return list[ix];
 		}
 
-		const Config& operator[](unsigned ix) const
+		const Config& operator[](size_t ix) const
 		{
 			auto&& list = as_list();
 			check(ix < list.size(), "Out of range");
@@ -495,17 +456,6 @@ namespace configuru
 		{
 			assert_type(Map);
 			return _u.map->impl;
-		}
-
-		// TODO: remove these
-		const Config& operator[](const char* key) const
-		{
-			return (*this)[std::string(key)];
-		}
-
-		Config& operator[](const char* key)
-		{
-			return (*this)[std::string(key)];
 		}
 
 		const Config& operator[](const std::string& key) const;
@@ -1546,7 +1496,7 @@ namespace configuru
 
 		if (!is_map && ret.list_size() == 1) {
 			// A single value - not a list after all:
-			Config first( std::move(ret[0u]) );
+			Config first( std::move(ret[0]) );
 			append(first.prefix_comments,        std::move(ret.prefix_comments));
 			append(first.postfix_comments,       std::move(ret.postfix_comments));
 			append(first.pre_end_brace_comments, std::move(ret.pre_end_brace_comments));

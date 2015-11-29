@@ -69,8 +69,11 @@ Usage (writing):
 
 	Config cfg = Config::new_map();
 	cfg["pi"] = 3.14;
-	cfg["list"] = Config::new_list();
-	cfg["list"].push_back(Config(42));
+	cfg["list"] = {1, 2, 3};
+	cfg["map"] = {
+		{"key1", "value1"},
+		{"key2", "value2"},
+	};
 	write_config_file("output.cfg", cfg);
 
 Goals:
@@ -89,10 +92,10 @@ Goals:
 
 # TODO:
 * Code cleanup.
-* Nicer syntax for creating configs.
 * Compact printing.
 * Dissallow space before colon in map.
 * Customize indentation (tabs, spaces, ...).
+* Adopt JSON nomenclature (list -> array, map -> object).
 
 
 Config format
@@ -100,16 +103,13 @@ Config format
 
 Like JSON, but with simplifications. Example file:
 
-```
-values = [1 2 3 4 5 6]
-map {
-	nested_key = +inf
-}
-python_style  = """This is a string
-which spans many lines."""
-"C# style" = @"Also nice for \ and stuff"
-}
-```
+	values: [1 2 3 4 5 6]
+	map {
+		nested_key = +inf
+	}
+	python_style: """This is a string
+	                 which spans many lines."""
+	"C# style": @"Also nice for \ and stuff"
 
 * Top-level can be key-value pairs, or a value.
 * Keys need not be quoted if identifiers.
