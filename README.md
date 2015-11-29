@@ -45,10 +45,10 @@ Usage (parsing):
 	}
 	float pi = cfg.get_or(pi, 3.14f);
 
-	const auto& list = cfg["list"];
-	if (cfg["list"].is_list()) {
-		std::cout << "First element: " << cfg["list"][0u];
-		for (const Config& element : cfg["list"].as_list()) {
+	const auto& array = cfg["array"];
+	if (cfg["array"].is_list()) {
+		std::cout << "First element: " << cfg["array"][0u];
+		for (const Config& element : cfg["array"].as_array()) {
 		}
 	}
 
@@ -68,11 +68,11 @@ Usage (writing):
 ----------------
 
 	Config cfg = Config::new_object();
-	cfg["pi"] = 3.14;
-	cfg["list"] = {1, 2, 3};
+	cfg["pi"]     = 3.14;
+	cfg["array"]  = { 1, 2, 3 };
 	cfg["object"] = {
-		{"key1", "value1"},
-		{"key2", "value2"},
+		{ "key1", "value1" },
+		{ "key2", "value2" },
 	};
 	write_config_file("output.cfg", cfg);
 
@@ -114,8 +114,8 @@ Like JSON, but with simplifications. Example file:
 * Keys need not be quoted if identifiers.
 * = or : can be used to separate keys and values.
 * Key-value pairs need not be separated with ;
-* List values need not be separated with ,
-* Trailing , allowed in lists.
+* Array values need not be separated with ,
+* Trailing , allowed in arrays.
 
 """ starts a verbatim multiline string
 

@@ -137,7 +137,7 @@ void create()
 	*/
 
 	// Create the config as an object:
-	auto cfg = Config::new_object();
+	auto cfg = Config::object();
 
 	// add a number that is stored as double
 	cfg["pi"] = 3.141;
@@ -152,7 +152,7 @@ void create()
 	cfg["nothing"] = nullptr;
 
 	// add an object inside the object
-	cfg["answer"] = Config::new_object();
+	cfg["answer"] = Config::object();
 	cfg["answer"]["everything"] = 42;
 
 	// add an array that is stored as std::vector (using an initializer_list)

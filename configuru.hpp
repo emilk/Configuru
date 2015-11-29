@@ -70,12 +70,12 @@ Usage (parsing):
 Usage (writing):
 ----------------
 
-	Config cfg = Config::new_object();
-	cfg["pi"] = 3.14;
-	cfg["array"] = {1, 2, 3};
+	Config cfg = Config::object();
+	cfg["pi"]     = 3.14;
+	cfg["array"]  = { 1, 2, 3 };
 	cfg["object"] = {
-		{"key1", "value1"},
-		{"key2", "value2"},
+		{ "key1", "value1" },
+		{ "key2", "value2" },
 	};
 	write_config_file("output.cfg", cfg);
 
@@ -124,8 +124,10 @@ Tabs anywhere else is not allowed.
 #define CONFIGURU_HEADER_HPP
 
 #include <initializer_list>
+#include <stdexcept>
 #include <string>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #ifndef CONFIGURU_ONERROR
@@ -289,15 +291,33 @@ namespace configuru
 			_u.array = new ConfigArray();
 		}
 
-		static Config new_object() {
+		static Config object() {
 			Config ret;
 			ret.make_object();
 			return ret;
 		}
 
-		static Config new_array() {
+		static Config object(std::initializer_list<std::pair<std::string, Config>> values) {
+			Config ret;
+			ret.make_object();
+			for (auto&& p : values) {
+				ret[(std::string)p.first] = std::move(p.second);
+			}
+			return ret;
+		}
+
+		static Config array() {
 			Config ret;
 			ret.make_array();
+			return ret;
+		}
+
+		static Config array(std::initializer_list<Config> values) {
+			Config ret;
+			ret.make_array();
+			for (auto&& v : values) {
+				ret.push_back(std::move(v));
+			}
 			return ret;
 		}
 
@@ -898,7 +918,7 @@ namespace configuru
 	{
 		Config ret = *this;
 		if (ret._type == Object) {
-			ret = Config::new_object();
+			ret = Config::object();
 			for (auto&& p : this->as_object()) {
 				auto& dst = ret._u.object->impl[p.first];
 				dst.nr    = p.second.nr;
@@ -906,7 +926,7 @@ namespace configuru
 			}
 		}
 		if (ret._type == Array) {
-			ret = Config::new_array();
+			ret = Config::array();
 			for (auto&& value : this->as_array()) {
 				ret.push_back( value.deep_clone() );
 			}
@@ -1484,7 +1504,7 @@ namespace configuru
 
 		if (!is_object && ret.array_size() == 0) {
 			if (_options.empty_file) {
-				auto empty_object = Config::new_object();
+				auto empty_object = Config::object();
 				append(empty_object.prefix_comments,        std::move(ret.prefix_comments));
 				append(empty_object.postfix_comments,       std::move(ret.postfix_comments));
 				append(empty_object.pre_end_brace_comments, std::move(ret.pre_end_brace_comments));
