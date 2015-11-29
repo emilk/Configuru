@@ -52,7 +52,7 @@ Usage (parsing):
 		}
 	}
 
-	for (auto& p : cfg["object"].as_map()) {
+	for (auto& p : cfg["object"].as_object()) {
 		std::cout << "Key: "   << p.first << std::endl;
 		std::cout << "Value: " << (float)p.second;
 	}
@@ -67,10 +67,10 @@ Usage (parsing):
 Usage (writing):
 ----------------
 
-	Config cfg = Config::new_map();
+	Config cfg = Config::new_object();
 	cfg["pi"] = 3.14;
 	cfg["list"] = {1, 2, 3};
-	cfg["map"] = {
+	cfg["object"] = {
 		{"key1", "value1"},
 		{"key2", "value2"},
 	};
@@ -93,9 +93,8 @@ Goals:
 # TODO:
 * Code cleanup.
 * Compact printing.
-* Dissallow space before colon in map.
+* Dissallow space before colon in object.
 * Customize indentation (tabs, spaces, ...).
-* Adopt JSON nomenclature (list -> array, map -> object).
 
 
 Config format
@@ -104,7 +103,7 @@ Config format
 Like JSON, but with simplifications. Example file:
 
 	values: [1 2 3 4 5 6]
-	map {
+	object {
 		nested_key = +inf
 	}
 	python_style: """This is a string

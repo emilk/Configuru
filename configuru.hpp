@@ -48,14 +48,14 @@ Usage (parsing):
 	}
 	float pi = cfg.get_or(pi, 3.14f);
 
-	const auto& list = cfg["list"];
-	if (cfg["list"].is_list()) {
-		std::cout << "First element: " << cfg["list"][0];
-		for (const Config& element : cfg["list"].as_list()) {
+	const auto& array = cfg["array"];
+	if (cfg["array"].is_array()) {
+		std::cout << "First element: " << cfg["array"][0];
+		for (const Config& element : cfg["array"].as_array()) {
 		}
 	}
 
-	for (auto& p : cfg["map"].as_map()) {
+	for (auto& p : cfg["object"].as_object()) {
 		std::cout << "Key: "   << p.first << std::endl;
 		std::cout << "Value: " << p.second;
 	}
@@ -70,10 +70,10 @@ Usage (parsing):
 Usage (writing):
 ----------------
 
-	Config cfg = Config::new_map();
+	Config cfg = Config::new_object();
 	cfg["pi"] = 3.14;
-	cfg["list"] = {1, 2, 3};
-	cfg["map"] = {
+	cfg["array"] = {1, 2, 3};
+	cfg["object"] = {
 		{"key1", "value1"},
 		{"key2", "value2"},
 	};
@@ -86,7 +86,7 @@ Config format
 Like JSON, but with simplifications. Example file:
 
 	values: [1 2 3 4 5 6]
-	map {
+	object {
 		nested_key = +inf
 	}
 	python_style: """This is a string
@@ -97,8 +97,8 @@ Like JSON, but with simplifications. Example file:
 * Keys need not be quoted if identifiers.
 * = or : can be used to separate keys and values.
 * Key-value pairs need not be separated with ;
-* List values need not be separated with ,
-* Trailing , allowed in lists.
+* Array values need not be separated with ,
+* Trailing , allowed in arrays.
 
 """ starts a verbatim multiline string
 
@@ -175,7 +175,7 @@ namespace configuru
 	struct Config_Entry
 	{
 		Config_T              value;
-		unsigned              nr       = BAD_ENTRY; // Size of the map prior to adding this entry
+		unsigned              nr       = BAD_ENTRY; // Size of the object prior to adding this entry
 		mutable bool          accessed = false;     // Set to true if accessed.
 	};
 
@@ -190,29 +190,29 @@ namespace configuru
 	/*
 	 A dynamic config variable.
 	 Acts like something out of Python or Lua.
-	 Uses reference-counting for maps and lists.
+	 Uses reference-counting for objects and arrays.
 	 This means all copies are shallow copies.
 	*/
 	class Config
 	{
 		enum Type {
 			Invalid,
-			BadLookupType, // We are the result of a key-lookup in a Map with no hit. We are in effect write-only.
-			Null, Bool, Int, Float, String, List, Map
+			BadLookupType, // We are the result of a key-lookup in a Object with no hit. We are in effect write-only.
+			Null, Bool, Int, Float, String, Array, Object
 		};
 
 	public:
-		using MapEntry = Config_Entry<Config>;
+		using ObjectEntry = Config_Entry<Config>;
 
-		using ConfigListImpl = std::vector<Config>;
-		using ConfigMapImpl  = std::unordered_map<std::string, MapEntry>;
-		struct ConfigList {
+		using ConfigArrayImpl = std::vector<Config>;
+		using ConfigObjectImpl = std::unordered_map<std::string, ObjectEntry>;
+		struct ConfigArray {
 			std::atomic<unsigned> ref_count { 1 };
-			ConfigListImpl        impl;
+			ConfigArrayImpl        impl;
 		};
-		struct ConfigMap {
+		struct ConfigObject {
 			std::atomic<unsigned> ref_count { 1 };
-			ConfigMapImpl        impl;
+			ConfigObjectImpl        impl;
 		};
 
 		// ----------------------------------------
@@ -248,56 +248,56 @@ namespace configuru
 		
 		Config(std::initializer_list<Config> values) : _type(Invalid) {
 			if (values.size() == 0) {
-				CONFIGURU_ONERROR("Can't deduce map or list with empty initializer list.");
+				CONFIGURU_ONERROR("Can't deduce object or array with empty initializer array.");
 			}
 
-			bool is_map = true;
+			bool is_object = true;
 
 			for (const auto& v : values)
 			{
-				if (!v.is_list()       ||
-				    v.list_size() != 2 ||
+				if (!v.is_array()       ||
+				    v.array_size() != 2 ||
 				    !v[0].is_string())
 				{
-					is_map = false;
+					is_object = false;
 					break;
 				}
 			}
 
-			if (is_map) {
-				make_map();
+			if (is_object) {
+				make_object();
 				for (auto&& v : values) {
 					(*this)[(std::string)v[0]] = std::move(v[1]);
 				}
 			} else {
-				make_list();
+				make_array();
 				for (auto&& v : values) {
 					push_back(std::move(v));
 				}
 			}
 		}
 
-		void make_map() {
+		void make_object() {
 			assert_type(Invalid);
-			_type = Map;
-			_u.map = new ConfigMap();
+			_type = Object;
+			_u.object = new ConfigObject();
 		}
 
-		void make_list() {
+		void make_array() {
 			assert_type(Invalid);
-			_type = List;
-			_u.list = new ConfigList();
+			_type = Array;
+			_u.array = new ConfigArray();
 		}
 
-		static Config new_map() {
+		static Config new_object() {
 			Config ret;
-			ret.make_map();
+			ret.make_object();
 			return ret;
 		}
 
-		static Config new_list() {
+		static Config new_array() {
 			Config ret;
-			ret.make_list();
+			ret.make_array();
 			return ret;
 		}
 
@@ -338,8 +338,8 @@ namespace configuru
 		bool is_int()    const { return _type == Int;    }
 		bool is_float()  const { return _type == Float;  }
 		bool is_string() const { return _type == String; }
-		bool is_map()    const { return _type == Map;    }
-		bool is_list()   const { return _type == List;   }
+		bool is_object()    const { return _type == Object;    }
+		bool is_array()   const { return _type == Array;   }
 		bool is_number() const { return is_int() || is_float(); }
 
 		// Where in source where we defined?
@@ -358,7 +358,7 @@ namespace configuru
 		explicit operator std::vector<T>() const
 		{
 			std::vector<T> ret;
-			for (auto&& config : as_list()) {
+			for (auto&& config : as_array()) {
 				ret.push_back((T)config);
 			}
 			return ret;
@@ -403,59 +403,59 @@ namespace configuru
 		T as() const;
 
 		// ----------------------------------------
-		// List:
+		// Array:
 
-		ConfigListImpl& as_list() {
-			assert_type(List);
-			return _u.list->impl;
+		ConfigArrayImpl& as_array() {
+			assert_type(Array);
+			return _u.array->impl;
 		}
 
-		const ConfigListImpl& as_list() const
+		const ConfigArrayImpl& as_array() const
 		{
-			assert_type(List);
-			return _u.list->impl;
+			assert_type(Array);
+			return _u.array->impl;
 		}
 
 		Config& operator[](size_t ix)
 		{
-			auto&& list = as_list();
-			check(ix < list.size(), "Out of range");
-			return list[ix];
+			auto&& array = as_array();
+			check(ix < array.size(), "Out of range");
+			return array[ix];
 		}
 
 		const Config& operator[](size_t ix) const
 		{
-			auto&& list = as_list();
-			check(ix < list.size(), "Out of range");
-			return list[ix];
+			auto&& array = as_array();
+			check(ix < array.size(), "Out of range");
+			return array[ix];
 		}
 
-		size_t list_size() const
+		size_t array_size() const
 		{
-			return as_list().size();
+			return as_array().size();
 		}
 
 		void push_back(Config value) {
-			as_list().push_back(std::move(value));
+			as_array().push_back(std::move(value));
 		}
 
 		// ----------------------------------------
-		// Map:
+		// Object:
 
-		size_t map_size() const
+		size_t object_size() const
 		{
-			return as_map().size();
+			return as_object().size();
 		}
 
-		ConfigMapImpl& as_map() {
-			assert_type(Map);
-			return _u.map->impl;
+		ConfigObjectImpl& as_object() {
+			assert_type(Object);
+			return _u.object->impl;
 		}
 
-		const ConfigMapImpl& as_map() const
+		const ConfigObjectImpl& as_object() const
 		{
-			assert_type(Map);
-			return _u.map->impl;
+			assert_type(Object);
+			return _u.object->impl;
 		}
 
 		const Config& operator[](const std::string& key) const;
@@ -463,7 +463,7 @@ namespace configuru
 
 		bool has_key(const std::string& key) const
 		{
-			return as_map().count(key) != 0;
+			return as_object().count(key) != 0;
 		}
 
 		bool erase_key(const std::string& key);
@@ -496,7 +496,7 @@ namespace configuru
 
 		// ----------------------------------------
 
-		// Will check for dangling (unaccessed) map keys recursively
+		// Will check for dangling (unaccessed) object keys recursively
 		void check_dangling() const;
 
 		void mark_accessed(bool v) const;
@@ -534,8 +534,8 @@ namespace configuru
 			int64_t        i;
 			double         f;
 			std::string*   str;
-			ConfigMap*     map;
-			ConfigList*    list;
+			ConfigObject*     object;
+			ConfigArray*    array;
 			BadLookupInfo* bad_lookup; // In case of BadLookupType
 		} _u;
 
@@ -558,7 +558,7 @@ namespace configuru
 	template<> inline double                        Config::as() const { return as_double(); }
 	template<> inline const std::string&            Config::as() const { return as_string(); }
 	template<> inline std::string                   Config::as() const { return as_string(); }
-	template<> inline const Config::ConfigListImpl& Config::as() const { return as_list();   }
+	template<> inline const Config::ConfigArrayImpl& Config::as() const { return as_array();   }
 	// template<> inline std::vector<std::string>     Config::as() const { return as_vector<T>();   }
 
 	// ------------------------------------------------------------------------
@@ -573,9 +573,9 @@ namespace configuru
 	template<typename T>
 	T Config::get_or(const std::string& key, const T& default_value) const
 	{
-		auto&& map = as_map();
-		auto it = map.find(key);
-		if (it == map.end()) {
+		auto&& object = as_object();
+		auto it = object.find(key);
+		if (it == object.end()) {
 			return default_value;
 		} else {
 			const auto& entry = it->second;
@@ -595,12 +595,12 @@ namespace configuru
 	void visit_configs(Config&& config, Visitor&& visitor)
 	{
 		visitor(config);
-		if (config.is_map()) {
-			for (auto&& p : config.as_map()) {
+		if (config.is_object()) {
+			for (auto&& p : config.as_object()) {
 				visit_configs(p.second.value, visitor);
 			}
-		} else if (config.is_list()) {
-			for (auto&& e : config.as_list()) {
+		} else if (config.is_array()) {
+			for (auto&& e : config.as_array()) {
 				visit_configs(e, visitor);
 			}
 		}
@@ -624,8 +624,8 @@ namespace configuru
 	// Will try to merge from 'src' do 'dst', replacing with 'src' on any conflict.
 	inline void merge_replace(Config& dst, const Config& src)
 	{
-		if (dst.is_map() && src.is_map()) {
-			for (auto&& p : src.as_map()) {
+		if (dst.is_object() && src.is_object()) {
+			for (auto&& p : src.as_object()) {
 				merge_replace(dst[p.first], src.second.entry);
 			}
 		} else {
@@ -665,54 +665,54 @@ namespace configuru
 	{
 		// This struct basically contain all differences with JSON.
 
-		bool enforce_indentation    = true;  // Must indent with tabs?
+		bool enforce_indentation      = true;  // Must indent with tabs?
 
 		// Top file:
-		bool empty_file             = false; // If true, an empty file is an empty map.
-		bool implicit_top_map       = true;  // Ok with key-value pairs top-level?
-		bool implicit_top_list      = true;  // Ok with several values top-level?
+		bool empty_file               = false; // If true, an empty file is an empty object.
+		bool implicit_top_object      = true;  // Ok with key-value pairs top-level?
+		bool implicit_top_array       = true;  // Ok with several values top-level?
 
 		// Comments:
-		bool single_line_comments   = true;  // Allow this?
-		bool block_comments         = true;  /* Allow this? */
-		bool nesting_block_comments = true;  // /* Allow /*    this? */ */
+		bool single_line_comments     = true;  // Allow this?
+		bool block_comments           = true;  /* Allow this? */
+		bool nesting_block_comments   = true;  // /* Allow /*    this? */ */
 
 		// Numbers:
-		bool inf                    = true;  // Allow +inf, -inf
-		bool nan                    = true;  // Allow +NaN
-		bool hexadecimal_integers   = true;  // Allow 0xff
-		bool binary_integers        = true;  // Allow 0b1010
-		bool unary_plus             = true;  // Allow +42
+		bool inf                      = true;  // Allow +inf, -inf
+		bool nan                      = true;  // Allow +NaN
+		bool hexadecimal_integers     = true;  // Allow 0xff
+		bool binary_integers          = true;  // Allow 0b1010
+		bool unary_plus               = true;  // Allow +42
 
-		// Lists
-		bool list_omit_comma        = true;  // Allow [1 2 3]
-		bool list_trailing_comma    = true;  // Allow [1, 2, 3,]
+		// Arrays
+		bool array_omit_comma         = true;  // Allow [1 2 3]
+		bool array_trailing_comma     = true;  // Allow [1, 2, 3,]
 
-		// Maps:
-		bool identifiers_keys       = true;  // { is_this_ok: true }
-		bool map_separator_equal    = false; // { "is_this_ok" = true }
-		bool omit_colon_before_map  = true;  // { "map" { /* nested */ } }
-		bool map_omit_comma         = true;  // Allow {a:1 b:2}
-		bool map_trailing_comma     = true;  // Allow {a:1, b:2,}
-		bool map_duplicate_keys     = false; // Allow {"a":1, "a":2}
+		// Objects:
+		bool identifiers_keys         = true;  // { is_this_ok: true }
+		bool object_separator_equal   = false; // { "is_this_ok" = true }
+		bool omit_colon_before_object = true;  // { "object" { /* nested */ } }
+		bool object_omit_comma        = true;  // Allow {a:1 b:2}
+		bool object_trailing_comma    = true;  // Allow {a:1, b:2,}
+		bool object_duplicate_keys    = false; // Allow {"a":1, "a":2}
 
 		// Strings
-		bool str_csharp_verbatim    = true; // Allow @"Verbatim\strings"
-		bool str_python_multiline   = true; // Allow """ Python\nverbatim strings """
-		bool str_32bit_unicode      = true; // Allow "\U0030dbfd"
+		bool str_csharp_verbatim      = true;  // Allow @"Verbatim\strings"
+		bool str_python_multiline     = true;  // Allow """ Python\nverbatim strings """
+		bool str_32bit_unicode        = true;  // Allow "\U0030dbfd"
 
 		// Special
-		bool allow_macro            = true; // Allow #include "some_other_file.cfg"
+		bool allow_macro              = true;  // Allow #include "some_other_file.cfg"
 
 		// When writing:
-		bool write_comments = true;
+		bool write_comments           = true;
 	};
 
 	inline FormatOptions make_json_options()
 	{
 		FormatOptions options;
 		memset(&options, 0, sizeof(options));
-		// Technically map_duplicate_keys should be true, but it is error prone.
+		// Technically object_duplicate_keys should be true, but it is error prone.
 		return options;
 	}
 
@@ -772,8 +772,8 @@ namespace configuru
 	}
 
 	struct BadLookupInfo {
-		DocInfo_SP            doc;      // Of parent map
-		unsigned              line;     // Of parent map
+		DocInfo_SP            doc;      // Of parent object
+		unsigned              line;     // Of parent object
 		std::string           key;
 		std::atomic<unsigned> ref_count { 1 };
 	};
@@ -805,9 +805,9 @@ namespace configuru
 			_u.str = new std::string(*o._u.str);
 		} else {
 			memcpy(&_u, &o._u, sizeof(_u));
-			if (_type == BadLookupType) { _u.list->ref_count += 1; }
-			if (_type == List)          { _u.list->ref_count += 1; }
-			if (_type == Map)           { _u.map->ref_count  += 1; }
+			if (_type == BadLookupType) { _u.array->ref_count += 1; }
+			if (_type == Array)          { _u.array->ref_count += 1; }
+			if (_type == Object)           { _u.object->ref_count  += 1; }
 		}
 		_doc  = o._doc;
 		_line = o._line;
@@ -819,10 +819,10 @@ namespace configuru
 
 	const Config& Config::operator[](const std::string& key) const
 	{
-		auto&& map = as_map();
-		auto it = map.find(key);
-		if (it == map.end()) {
-			on_error("Key '" + key + "' not in map");
+		auto&& object = as_object();
+		auto it = object.find(key);
+		if (it == object.end()) {
+			on_error("Key '" + key + "' not in object");
 			return s_invalid;
 		} else {
 			const auto& entry = it->second;
@@ -833,11 +833,11 @@ namespace configuru
 
 	Config& Config::operator[](const std::string& key)
 	{
-		auto&& map = as_map();
-		auto&& entry = map[key];
+		auto&& object = as_object();
+		auto&& entry = object[key];
 		if (entry.nr == BAD_ENTRY) {
 			// New entry
-			entry.nr = (unsigned)map.size() - 1;
+			entry.nr = (unsigned)object.size() - 1;
 			entry.value._type = BadLookupType;
 			entry.value._u.bad_lookup = new BadLookupInfo{_doc, _line, key};
 		} else {
@@ -848,12 +848,12 @@ namespace configuru
 
 	bool Config::erase_key(const std::string& key)
 	{
-		auto& map = as_map();
-		auto it = map.find(key);
-		if (it == map.end()) {
+		auto& object = as_object();
+		auto it = object.find(key);
+		if (it == object.end()) {
 			return false;
 		} else {
-			map.erase(it);
+			object.erase(it);
 			return true;
 		}
 	}
@@ -866,25 +866,25 @@ namespace configuru
 		if (a._type == Int)    { return a._u.i    == b._u.i;    }
 		if (a._type == Float)  { return a._u.f    == b._u.f;    }
 		if (a._type == String) { return *a._u.str == *b._u.str; }
-		if (a._type == Map)    {
-			if (a._u.map == b._u.map) { return true; }
-			auto&& a_map = a.as_map();
-			auto&& b_map = b.as_map();
-			if (a_map.size() != b_map.size()) { return false; }
-			for (auto&& p: a_map) {
-				auto it = b_map.find(p.first);
-				if (it == b_map.end()) { return false; }
+		if (a._type == Object)    {
+			if (a._u.object == b._u.object) { return true; }
+			auto&& a_object = a.as_object();
+			auto&& b_object = b.as_object();
+			if (a_object.size() != b_object.size()) { return false; }
+			for (auto&& p: a_object) {
+				auto it = b_object.find(p.first);
+				if (it == b_object.end()) { return false; }
 				if (!deep_eq(p.second.value, it->second.value)) { return false; }
 			}
 			return true;
 		}
-		if (a._type == List)    {
-			if (a._u.list == b._u.list) { return true; }
-			auto&& a_list = a.as_list();
-			auto&& b_list = b.as_list();
-			if (a_list.size() != b_list.size()) { return false; }
-			for (size_t i=0; i<a_list.size(); ++i) {
-				if (!deep_eq(a_list[i], a_list[i])) {
+		if (a._type == Array)    {
+			if (a._u.array == b._u.array) { return true; }
+			auto&& a_array = a.as_array();
+			auto&& b_array = b.as_array();
+			if (a_array.size() != b_array.size()) { return false; }
+			for (size_t i=0; i<a_array.size(); ++i) {
+				if (!deep_eq(a_array[i], a_array[i])) {
 					return false;
 				}
 			}
@@ -897,17 +897,17 @@ namespace configuru
 	Config Config::deep_clone() const
 	{
 		Config ret = *this;
-		if (ret._type == Map) {
-			ret = Config::new_map();
-			for (auto&& p : this->as_map()) {
-				auto& dst = ret._u.map->impl[p.first];
+		if (ret._type == Object) {
+			ret = Config::new_object();
+			for (auto&& p : this->as_object()) {
+				auto& dst = ret._u.object->impl[p.first];
 				dst.nr    = p.second.nr;
 				dst.value = p.second.value.deep_clone();
 			}
 		}
-		if (ret._type == List) {
-			ret = Config::new_list();
-			for (auto&& value : this->as_list()) {
+		if (ret._type == Array) {
+			ret = Config::new_array();
+			for (auto&& value : this->as_array()) {
 				ret.push_back( value.deep_clone() );
 			}
 		}
@@ -916,9 +916,9 @@ namespace configuru
 
 	void Config::check_dangling() const
 	{
-		// TODO: iterating over a map should count as accessing the values
-		if (is_map()) {
-			for (auto&& p : as_map()) {
+		// TODO: iterating over an object should count as accessing the values
+		if (is_object()) {
+			for (auto&& p : as_object()) {
 				auto&& entry = p.second;
 				auto&& value = entry.value;
 				if (entry.accessed) {
@@ -928,8 +928,8 @@ namespace configuru
 					CONFIGURU_ON_DANGLING(where_str.c_str(), p.first.c_str());
 				}
 			}
-		} else if (is_list()) {
-			for (auto&& e : as_list()) {
+		} else if (is_array()) {
+			for (auto&& e : as_array()) {
 				e.check_dangling();
 			}
 		}
@@ -937,14 +937,14 @@ namespace configuru
 
 	void Config::mark_accessed(bool v) const
 	{
-		if (is_map()) {
-			for (auto&& p : as_map()) {
+		if (is_object()) {
+			for (auto&& p : as_object()) {
 				auto&& entry = p.second;
 				entry.accessed = v;
 				entry.value.mark_accessed(v);
 			}
-		} else if (is_list()) {
-			for (auto&& e : as_list()) {
+		} else if (is_array()) {
+			for (auto&& e : as_array()) {
 				e.mark_accessed(v);
 			}
 		}
@@ -959,8 +959,8 @@ namespace configuru
 			case Int:           return "integer";
 			case Float:         return "float";
 			case String:        return _u.str->c_str();
-			case List:          return "list";
-			case Map:           return "map";
+			case Array:          return "array";
+			case Object:           return "object";
 			default:            return "BROKEN Config";
 		}
 	}
@@ -975,8 +975,8 @@ namespace configuru
 			case Int:           return "integer";
 			case Float:         return "float";
 			case String:        return "string";
-			case List:          return "list";
-			case Map:           return "map";
+			case Array:          return "array";
+			case Object:           return "object";
 			default:            return "BROKEN Config";
 		}
 	}
@@ -987,13 +987,13 @@ namespace configuru
 			if (--_u.bad_lookup->ref_count == 0) {
 				delete _u.bad_lookup;
 			}
-		} else if (_type == Map) {
-			if (--_u.map->ref_count == 0) {
-				delete _u.map;
+		} else if (_type == Object) {
+			if (--_u.object->ref_count == 0) {
+				delete _u.object;
 			}
-		} else if (_type == List) {
-			if (--_u.list->ref_count == 0) {
-				delete _u.list;
+		} else if (_type == Array) {
+			if (--_u.array->ref_count == 0) {
+				delete _u.array;
 			}
 		} else if (_type == String) {
 			delete _u.str;
@@ -1162,10 +1162,10 @@ namespace configuru
 
 		Config top_level();
 		void parse_value(Config& out, bool* out_did_skip_postwhites);
-		void parse_list(Config& dst);
-		void parse_list_contents(Config& dst);
-		void parse_map(Config& dst);
-		void parse_map_contents(Config& dst);
+		void parse_array(Config& dst);
+		void parse_array_contents(Config& dst);
+		void parse_object(Config& dst);
+		void parse_object_contents(Config& dst);
 		void parse_finite_number(Config& dst);
 		std::string parse_string();
 		uint64_t parse_hex(int count);
@@ -1444,25 +1444,25 @@ namespace configuru
 	}
 
 	/*
-	The top-level can be any value, OR the innerds of an map:
+	The top-level can be any value, OR the innerds of an object:
 	foo = 1
 	"bar": 2
 	*/
 	Config Parser::top_level()
 	{
-		bool is_map = false;
+		bool is_object = false;
 
-		if (_options.implicit_top_map)
+		if (_options.implicit_top_object)
 		{
 			auto state = get_state();
 			skip_white_ignore_comments();
 
 			if (IDENT_STARTERS[_ptr[0]] && !is_reserved_identifier(_ptr)) {
-				is_map = true;
+				is_object = true;
 			} else if (_ptr[0] == '"' || _ptr[0] == '@') {
 				parse_string();
 				skip_white_ignore_comments();
-				is_map = (_ptr[0] == ':' || _ptr[0] == '=');
+				is_object = (_ptr[0] == ':' || _ptr[0] == '=');
 			}
 
 			set_state(state); // restore
@@ -1471,31 +1471,31 @@ namespace configuru
 		Config ret;
 		tag(ret);
 
-		if (is_map) {
-			parse_map_contents(ret);
+		if (is_object) {
+			parse_object_contents(ret);
 		} else {
-			parse_list_contents(ret);
-			parse_assert(ret.list_size() <= 1 || _options.implicit_top_list, "Multiple values not allowed without enclosing []");
+			parse_array_contents(ret);
+			parse_assert(ret.array_size() <= 1 || _options.implicit_top_array, "Multiple values not allowed without enclosing []");
 		}
 
 		skip_post_white(&ret);
 
 		parse_assert(_ptr[0] == 0, "Expected EoF");
 
-		if (!is_map && ret.list_size() == 0) {
+		if (!is_object && ret.array_size() == 0) {
 			if (_options.empty_file) {
-				auto empty_map = Config::new_map();
-				append(empty_map.prefix_comments,        std::move(ret.prefix_comments));
-				append(empty_map.postfix_comments,       std::move(ret.postfix_comments));
-				append(empty_map.pre_end_brace_comments, std::move(ret.pre_end_brace_comments));
-				return empty_map;
+				auto empty_object = Config::new_object();
+				append(empty_object.prefix_comments,        std::move(ret.prefix_comments));
+				append(empty_object.postfix_comments,       std::move(ret.postfix_comments));
+				append(empty_object.pre_end_brace_comments, std::move(ret.pre_end_brace_comments));
+				return empty_object;
 			} else {
 				throw_error("Empty file");
 			}
 		}
 
-		if (!is_map && ret.list_size() == 1) {
-			// A single value - not a list after all:
+		if (!is_object && ret.array_size() == 1) {
+			// A single value - not an array after all:
 			Config first( std::move(ret[0]) );
 			append(first.prefix_comments,        std::move(ret.prefix_comments));
 			append(first.postfix_comments,       std::move(ret.postfix_comments));
@@ -1538,10 +1538,10 @@ namespace configuru
 			dst = false;
 		}
 		else if (_ptr[0] == '{') {
-			parse_map(dst);
+			parse_object(dst);
 		}
 		else if (_ptr[0] == '[') {
-			parse_list(dst);
+			parse_array(dst);
 		}
 		else if (_ptr[0] == '#') {
 			parse_macro(dst);
@@ -1576,27 +1576,27 @@ namespace configuru
 		*out_did_skip_postwhites = skip_post_white(&dst);
 	}
 
-	void Parser::parse_list(Config& list)
+	void Parser::parse_array(Config& array)
 	{
 		auto state = get_state();
 
 		swallow('[');
 
 		_indentation += 1;
-		parse_list_contents(list);
+		parse_array_contents(array);
 		_indentation -= 1;
 
 		if (_ptr[0] == ']') {
 			_ptr += 1;
 		} else {
 			set_state(state);
-			throw_error("Non-terminated list");
+			throw_error("Non-terminated array");
 		}
 	}
 
-	void Parser::parse_list_contents(Config& list)
+	void Parser::parse_array_contents(Config& array)
 	{
-		list.make_list();
+		array.make_array();
 
 		for (;;)
 		{
@@ -1608,12 +1608,12 @@ namespace configuru
 				if (line_indentation >= 0 && _indentation - 1 != line_indentation) {
 					throw_indentation_error(_indentation - 1, line_indentation);
 				}
-				list.pre_end_brace_comments = value.prefix_comments;
+				array.pre_end_brace_comments = value.prefix_comments;
 				break;
 			}
 
 			if (!_ptr[0]) {
-				list.pre_end_brace_comments = value.prefix_comments;
+				array.pre_end_brace_comments = value.prefix_comments;
 				break;
 			}
 
@@ -1622,7 +1622,7 @@ namespace configuru
 			}
 
 			if (IDENT_STARTERS[_ptr[0]] && !is_reserved_identifier(_ptr)) {
-				throw_error("Found identifier; expected value. Did you mean to use a {map} rather than a [list]?");
+				throw_error("Found identifier; expected value. Did you mean to use a {object} rather than a [array]?");
 			}
 
 			bool has_separator;
@@ -1635,14 +1635,14 @@ namespace configuru
 				has_separator = true;
 			}
 
-			list.push_back(std::move(value));
+			array.push_back(std::move(value));
 
 			bool is_last_element = !_ptr[0] || _ptr[0] == ']';
 
 			if (is_last_element) {
-				parse_assert(!has_comma || _options.list_trailing_comma, "Trailing comma disabled.");
+				parse_assert(!has_comma || _options.array_trailing_comma, "Trailing comma disabled.");
 			} else {
-				if (_options.list_omit_comma) {
+				if (_options.array_omit_comma) {
 					parse_assert(has_separator, "Expected a space, newline, comma or ]");
 				} else {
 					parse_assert(has_comma, "Expected a comma or ]");
@@ -1651,27 +1651,27 @@ namespace configuru
 		}
 	}
 
-	void Parser::parse_map(Config& map)
+	void Parser::parse_object(Config& object)
 	{
 		auto state = get_state();
 
 		swallow('{');
 
 		_indentation += 1;
-		parse_map_contents(map);
+		parse_object_contents(object);
 		_indentation -= 1;
 
 		if (_ptr[0] == '}') {
 			_ptr += 1;
 		} else {
 			set_state(state);
-			throw_error("Non-terminated map");
+			throw_error("Non-terminated object");
 		}
 	}
 
-	void Parser::parse_map_contents(Config& map)
+	void Parser::parse_object_contents(Config& object)
 	{
-		map.make_map();
+		object.make_object();
 
 		for (;;)
 		{
@@ -1683,12 +1683,12 @@ namespace configuru
 				if (line_indentation >= 0 && _indentation - 1 != line_indentation) {
 					throw_indentation_error(_indentation - 1, line_indentation);
 				}
-				map.pre_end_brace_comments = value.prefix_comments;
+				object.pre_end_brace_comments = value.prefix_comments;
 				break;
 			}
 
 			if (!_ptr[0]) {
-				map.pre_end_brace_comments = value.prefix_comments;
+				object.pre_end_brace_comments = value.prefix_comments;
 				break;
 			}
 
@@ -1708,25 +1708,25 @@ namespace configuru
 			else if (_ptr[0] == '"' || _ptr[0] == '@') {
 				key = parse_string();
 			} else {
-				throw_error("Map key expected (either an identifier or a quoted string), got " + quote(_ptr[0]));
+				throw_error("Object key expected (either an identifier or a quoted string), got " + quote(_ptr[0]));
 			}
 
 			skip_white_ignore_comments();
-			if (_ptr[0] == ':' || (_options.map_separator_equal && _ptr[0] == '=')) {
+			if (_ptr[0] == ':' || (_options.object_separator_equal && _ptr[0] == '=')) {
 				_ptr += 1;
 				skip_white_ignore_comments();
-			} else if (_options.omit_colon_before_map && (_ptr[0] == '{' || _ptr[0] == '#')) {
+			} else if (_options.omit_colon_before_object && (_ptr[0] == '{' || _ptr[0] == '#')) {
 				// Ok to ommit : in this case
 			} else {
-				if (_options.map_separator_equal && _options.omit_colon_before_map) {
-					throw_error("Expected one of '=', ':', '{' or '#' after map key");
+				if (_options.object_separator_equal && _options.omit_colon_before_object) {
+					throw_error("Expected one of '=', ':', '{' or '#' after object key");
 				} else {
-					throw_error("Expected : after map key");
+					throw_error("Expected : after object key");
 				}
 			}
 
-			if (!_options.map_duplicate_keys && map.has_key(key)) {
-				throw_error("Duplicate key: \"" + key + "\". Already set at " + map[key].where());
+			if (!_options.object_duplicate_keys && object.has_key(key)) {
+				throw_error("Duplicate key: \"" + key + "\". Already set at " + object[key].where());
 			}
 
 			bool has_separator;
@@ -1739,14 +1739,14 @@ namespace configuru
 				has_separator = true;
 			}
 
-			map[key] = std::move(value);
+			object[key] = std::move(value);
 
 			bool is_last_element = !_ptr[0] || _ptr[0] == '}';
 
 			if (is_last_element) {
-				parse_assert(!has_comma || _options.map_trailing_comma, "Trailing comma disabled.");
+				parse_assert(!has_comma || _options.object_trailing_comma, "Trailing comma disabled.");
 			} else {
-				if (_options.map_omit_comma) {
+				if (_options.object_omit_comma) {
 					parse_assert(has_separator, "Expected a space, newline, comma or }");
 				} else {
 					parse_assert(has_comma, "Expected a comma or }");
@@ -2108,15 +2108,15 @@ namespace configuru
 
 	bool is_simple(const Config& var)
 	{
-		if (var.is_list() || var.is_map()) { return false; }
+		if (var.is_array() || var.is_object()) { return false; }
 		if (!var.prefix_comments.empty())  { return false; }
 		if (!var.postfix_comments.empty()) { return false; }
 		return true;
 	}
 
-	bool is_all_numbers(const Config& list)
+	bool is_all_numbers(const Config& array)
 	{
-		for (auto& v: list.as_list()) {
+		for (auto& v: array.as_array()) {
 			if (!v.is_number()) {
 				return false;
 			}
@@ -2124,14 +2124,14 @@ namespace configuru
 		return true;
 	}
 
-	bool is_simple_list(const Config& list)
+	bool is_simple_array(const Config& array)
 	{
-		if (list.list_size() <= 16 && is_all_numbers(list)) {
+		if (array.array_size() <= 16 && is_all_numbers(array)) {
 			return true; // E.g., a 4x4 matrix
 		}
 
-		if (list.list_size() > 4) { return false; }
-		for (auto& v: list.as_list()) {
+		if (array.array_size() > 4) { return false; }
+		for (auto& v: array.as_array()) {
 			if (!is_simple(v)) {
 				return false;
 			}
@@ -2201,15 +2201,15 @@ namespace configuru
 				write_number( (double)config );
 			} else if (config.is_string()) {
 				write_string(config.as_string());
-			} else if (config.is_list()) {
-				if (config.list_size() == 0 && config.pre_end_brace_comments.empty()) {
+			} else if (config.is_array()) {
+				if (config.array_size() == 0 && config.pre_end_brace_comments.empty()) {
 					_ss << "[ ]";
-				} else if (is_simple_list(config)) {
+				} else if (is_simple_array(config)) {
 					_ss << "[ ";
-					auto&& list = config.as_list();
-					for (size_t i = 0; i < list.size(); ++i) {
-						write_value(indent + 1, list[i], false, true);
-						if (_options.list_omit_comma || i + 1 == list.size()) {
+					auto&& array = config.as_array();
+					for (size_t i = 0; i < array.size(); ++i) {
+						write_value(indent + 1, array[i], false, true);
+						if (_options.array_omit_comma || i + 1 == array.size()) {
 							_ss << " ";
 						} else {
 							_ss << ", ";
@@ -2219,12 +2219,12 @@ namespace configuru
 					_ss << "]";
 				} else {
 					_ss << "[\n";
-					auto&& list = config.as_list();
-					for (size_t i = 0; i < list.size(); ++i) {
-						write_prefix_comments(indent + 1, list[i].prefix_comments);
+					auto&& array = config.as_array();
+					for (size_t i = 0; i < array.size(); ++i) {
+						write_prefix_comments(indent + 1, array[i].prefix_comments);
 						write_indent(indent + 1);
-						write_value(indent + 1, list[i], false, true);
-						if (_options.list_omit_comma || i + 1 == list.size()) {
+						write_value(indent + 1, array[i], false, true);
+						if (_options.array_omit_comma || i + 1 == array.size()) {
 							_ss << "\n";
 						} else {
 							_ss << ",\n";
@@ -2234,12 +2234,12 @@ namespace configuru
 					write_indent(indent);
 					_ss << "]";
 				}
-			} else if (config.is_map()) {
-				if (config.map_size() == 0 && config.pre_end_brace_comments.empty()) {
+			} else if (config.is_object()) {
+				if (config.object_size() == 0 && config.pre_end_brace_comments.empty()) {
 					_ss << "{ }";
 				} else {
 					_ss << "{\n";
-					write_map_contents(indent + 1, config);
+					write_object_contents(indent + 1, config);
 					write_indent(indent);
 					_ss << "}";
 				}
@@ -2252,18 +2252,18 @@ namespace configuru
 			}
 		}
 
-		void write_map_contents(unsigned indent, const Config& config)
+		void write_object_contents(unsigned indent, const Config& config)
 		{
 			// Write in same order as input:
-			auto&& map = config.as_map();
-			std::vector<Config::ConfigMapImpl::const_iterator> pairs;
+			auto&& object = config.as_object();
+			std::vector<Config::ConfigObjectImpl::const_iterator> pairs;
 			size_t longest_key = 0;
-			for (auto it=map.begin(); it!=map.end(); ++it) {
+			for (auto it=object.begin(); it!=object.end(); ++it) {
 				pairs.push_back(it);
 				#if 1
 					longest_key = std::max(longest_key, it->first.size());
 				#else
-					if (!it->second.value.is_map()) {
+					if (!it->second.value.is_object()) {
 						longest_key = std::max(longest_key, it->first.size());
 					}
 				#endif
@@ -2277,7 +2277,7 @@ namespace configuru
 				write_prefix_comments(indent, value.prefix_comments);
 				write_indent(indent);
 				write_key(it->first);
-				if (_options.omit_colon_before_map && value.is_map() && value.map_size() != 0) {
+				if (_options.omit_colon_before_object && value.is_object() && value.object_size() != 0) {
 					_ss << " ";
 				} else {
 					_ss << ": ";
@@ -2286,7 +2286,7 @@ namespace configuru
 					}
 				}
 				write_value(indent, value, false, true);
-				if (_options.list_omit_comma || i + 1 == pairs.size()) {
+				if (_options.array_omit_comma || i + 1 == pairs.size()) {
 					_ss << "\n";
 				} else {
 					_ss << ",\n";
@@ -2426,8 +2426,8 @@ namespace configuru
 		w._options = options;
 		w._doc     = config.doc();
 
-		if (options.implicit_top_map && config.is_map()) {
-			w.write_map_contents(0, config);
+		if (options.implicit_top_object && config.is_object()) {
+			w.write_object_contents(0, config);
 		} else {
 			w.write_value(0, config, true, true);
 			w._ss << "\n"; // Good form

@@ -90,8 +90,8 @@ void run_unit_tests()
 }
 
 const char* TEST_CFG = R"(
-pi:   3.14,
-list: [1 2 3 4]
+pi:    3.14,
+array: [1 2 3 4]
 obj {
 	// A comment
 	nested_value: 42
@@ -128,7 +128,7 @@ void create()
 		"answer":  {
 			"everything": 42
 		},
-		"list":   [1, 0, 2],
+		"array":   [1, 0, 2],
 		"object": {
 			"currency": "USD",
 			"value":    42.99
@@ -136,8 +136,8 @@ void create()
 	}
 	*/
 
-	// Create the config as a map:
-	auto cfg = Config::new_map();
+	// Create the config as an object:
+	auto cfg = Config::new_object();
 
 	// add a number that is stored as double
 	cfg["pi"] = 3.141;
@@ -152,13 +152,13 @@ void create()
 	cfg["nothing"] = nullptr;
 
 	// add an object inside the object
-	cfg["answer"] = Config::new_map();
+	cfg["answer"] = Config::new_object();
 	cfg["answer"]["everything"] = 42;
 
-	// add an array that is stored as std::vector (using an initializer list)
-	cfg["list"] = { 1, 0, 2 };
+	// add an array that is stored as std::vector (using an initializer_list)
+	cfg["array"] = { 1, 0, 2 };
 
-	// add another object (using an initializer list of pairs)
+	// add another object (using an initializer_list of pairs)
 	cfg["object"] = {
 		{ "currency", "USD" },
 		{ "value",    42.99 }
@@ -173,7 +173,7 @@ void create()
 		{ "answer",  {
 			{ "everything", 42 }
 		} },
-		{ "list",   { 1, 0, 2 } },
+		{ "array",   { 1, 0, 2 } },
 		{ "object", {
 			{ "currency", "USD" },
 			{ "value",    42.99 }
