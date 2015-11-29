@@ -106,12 +106,20 @@ void parse_and_print()
 	cfg.check_dangling();
 
 	std::cout << std::endl;
-	std::cout << "// cfg:" << std::endl;
+	std::cout << "// CFG:" << std::endl;
 	std::cout << configuru::write_config(cfg, configuru::CFG);
 
 	std::cout << std::endl;
-	std::cout << "// Json:" << std::endl;
+	std::cout << "// JSON:" << std::endl;
 	std::cout << configuru::write_config(cfg, configuru::JSON);
+
+	std::cout << std::endl;
+	std::cout << "// Compact JSON:" << std::endl;
+	auto format = configuru::JSON;
+	format.compact = true;
+	std::cout << configuru::write_config(cfg, format);
+
+	std::cout << std::endl;
 }
 
 void create()

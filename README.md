@@ -92,7 +92,6 @@ Goals:
 
 # TODO:
 * Code cleanup.
-* Compact printing.
 * Dissallow space before colon in object.
 * Customize indentation (tabs, spaces, ...).
 

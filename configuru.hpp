@@ -761,6 +761,7 @@ namespace configuru
 
 		// When writing:
 		bool write_comments           = true;
+		bool compact                  = false;
 	};
 
 	inline FormatOptions make_json_options()
@@ -2243,6 +2244,7 @@ namespace configuru
 
 		void write_indent(unsigned indent)
 		{
+			if (_options.compact) { return; }
 			for (unsigned i=0; i<indent; ++i) {
 				_ss << "\t";
 			}
@@ -2299,13 +2301,24 @@ namespace configuru
 				write_string(config.as_string());
 			} else if (config.is_array()) {
 				if (config.array_size() == 0 && !has_pre_end_brace_comments(config)) {
-					_ss << "[ ]";
-				} else if (is_simple_array(config)) {
-					_ss << "[ ";
+					if (_options.compact) {
+						_ss << "[]";
+					} else {
+						_ss << "[ ]";
+					}
+				} else if (_options.compact || is_simple_array(config)) {
+					_ss << "[";
+					if (!_options.compact) {
+						_ss << " ";
+					}
 					auto&& array = config.as_array();
 					for (size_t i = 0; i < array.size(); ++i) {
 						write_value(indent + 1, array[i], false, true);
-						if (_options.array_omit_comma || i + 1 == array.size()) {
+						if (_options.compact) {
+							if (i + 1 < array.size()) {
+								_ss << ",";
+							}
+						} else if (_options.array_omit_comma || i + 1 == array.size()) {
 							_ss << " ";
 						} else {
 							_ss << ", ";
@@ -2332,9 +2345,17 @@ namespace configuru
 				}
 			} else if (config.is_object()) {
 				if (config.object_size() == 0 && !has_pre_end_brace_comments(config)) {
-					_ss << "{ }";
+					if (_options.compact) {
+						_ss << "{}";
+					} else {
+						_ss << "{ }";
+					}
 				} else {
-					_ss << "{\n";
+					if (_options.compact) {
+						_ss << "{";
+					} else {
+						_ss << "{\n";
+					}
 					write_object_contents(indent + 1, config);
 					write_indent(indent);
 					_ss << "}";
@@ -2373,7 +2394,9 @@ namespace configuru
 				write_prefix_comments(indent, value.comments().prefix);
 				write_indent(indent);
 				write_key(it->first);
-				if (_options.omit_colon_before_object && value.is_object() && value.object_size() != 0) {
+				if (_options.compact) {
+					_ss << ":";
+				} else if (_options.omit_colon_before_object && value.is_object() && value.object_size() != 0) {
 					_ss << " ";
 				} else {
 					_ss << ": ";
@@ -2382,7 +2405,11 @@ namespace configuru
 					}
 				}
 				write_value(indent, value, false, true);
-				if (_options.array_omit_comma || i + 1 == pairs.size()) {
+				if (_options.compact) {
+					if (i + 1 < pairs.size()) {
+						_ss << ",";
+					}
+				} else if (_options.array_omit_comma || i + 1 == pairs.size()) {
 					_ss << "\n";
 				} else {
 					_ss << ",\n";
