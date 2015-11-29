@@ -746,6 +746,7 @@ namespace configuru
 		// Objects:
 		bool identifiers_keys         = true;  // { is_this_ok: true }
 		bool object_separator_equal   = false; // { "is_this_ok" = true }
+		bool allow_space_before_colon = false; // { "is_this_ok" : true }
 		bool omit_colon_before_object = true;  // { "object" { /* nested */ } }
 		bool object_omit_comma        = true;  // Allow {a:1 b:2}
 		bool object_trailing_comma    = true;  // Allow {a:1, b:2,}
@@ -769,6 +770,7 @@ namespace configuru
 		FormatOptions options;
 		memset(&options, 0, sizeof(options));
 		// Technically object_duplicate_keys should be true, but it is error prone.
+		options.allow_space_before_colon = true;
 		return options;
 	}
 
@@ -1802,8 +1804,10 @@ namespace configuru
 				throw_error("Object key expected (either an identifier or a quoted string), got " + quote(_ptr[0]));
 			}
 
-			skip_white_ignore_comments();
+			bool space_after_key = skip_white_ignore_comments();
+
 			if (_ptr[0] == ':' || (_options.object_separator_equal && _ptr[0] == '=')) {
+				parse_assert(_options.allow_space_before_colon || _ptr[0] != ':' || !space_after_key, "No space allowed before colon");
 				_ptr += 1;
 				skip_white_ignore_comments();
 			} else if (_options.omit_colon_before_object && (_ptr[0] == '{' || _ptr[0] == '#')) {
