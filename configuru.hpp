@@ -711,7 +711,7 @@ namespace configuru
 
 	// ----------------------------------------------------------
 
-	struct ParseOptions
+	struct FormatOptions
 	{
 		// This struct basically contain all differences with JSON.
 
@@ -753,45 +753,38 @@ namespace configuru
 
 		// Special
 		bool allow_macro            = true; // Allow #include "some_other_file.cfg"
+
+		// When writing:
+		bool write_comments = true;
 	};
 
-	inline ParseOptions make_json_options()
+	inline FormatOptions make_json_options()
 	{
-		ParseOptions options;
+		FormatOptions options;
 		memset(&options, 0, sizeof(options));
 		// Technically map_duplicate_keys should be true, but it is error prone.
 		return options;
 	}
 
-	static const ParseOptions CFG  = ParseOptions();
-	static const ParseOptions JSON = make_json_options();
+	static const FormatOptions CFG  = FormatOptions();
+	static const FormatOptions JSON = make_json_options();
 
 	struct ParseInfo {
 		std::unordered_map<std::string, Config> parsed_files; // Two #include gives same Config tree.
 	};
 
-	/*
-	 Zero-ended Utf-8 encoded string of characters.
-	 */
-	Config parse_config(const char* str, ParseOptions options, DocInfo _doc, ParseInfo& info) throw(parse_error);
-	Config parse_config(const char* str, ParseOptions options, const char* name) throw(parse_error);
+	// Zero-ended Utf-8 encoded string of characters.
+	Config parse_config(const char* str, const FormatOptions& options, DocInfo _doc, ParseInfo& info) throw(parse_error);
+	Config parse_config(const char* str, const FormatOptions& options, const char* name) throw(parse_error);
 
-	Config parse_config_file(const std::string& path, ParseOptions options, DocInfo_SP doc, ParseInfo& info) throw(parse_error);
-	Config parse_config_file(const std::string& path, ParseOptions options) throw(parse_error);
+	Config parse_config_file(const std::string& path, const FormatOptions& options, DocInfo_SP doc, ParseInfo& info) throw(parse_error);
+	Config parse_config_file(const std::string& path, const FormatOptions& options) throw(parse_error);
 
 	// ----------------------------------------------------------
-	/*
-	 Writes in a pretty format with perfect reversibility of everything (including numbers).
-	*/
+	// Writes in a pretty format with perfect reversibility of everything (including numbers).
+	std::string write_config(const Config& config, const FormatOptions& options);
 
-	struct FormatOptions
-	{
-		bool json = false;
-	};
-
-	std::string write_config(const Config& config, FormatOptions options = FormatOptions());
-
-	void write_config_file(const std::string& path, const Config& config, FormatOptions options = FormatOptions());
+	void write_config_file(const std::string& path, const Config& config, const FormatOptions& options);
 }
 
 #endif // CONFIGURU_HEADER_HPP
@@ -1097,9 +1090,7 @@ namespace configuru
 
 	std::ostream& operator<<(std::ostream& os, const Config& cfg)
 	{
-		FormatOptions fo;
-		fo.json = true;
-		return os << write_config(cfg, fo);
+		return os << write_config(cfg, JSON);
 	}
 }
 
@@ -1196,7 +1187,7 @@ namespace configuru
 
 	struct Parser
 	{
-		Parser(const char* str, ParseOptions options, DocInfo_SP doc, ParseInfo& info);
+		Parser(const char* str, const FormatOptions& options, DocInfo_SP doc, ParseInfo& info);
 
 		bool skip_white(Comments* out_comments, int& out_indentation, bool break_on_newline);
 
@@ -1342,7 +1333,7 @@ namespace configuru
 		bool IDENT_CHARS[256]    = { 0 };
 
 	private:
-		ParseOptions _options;
+		FormatOptions _options;
 		DocInfo_SP   _doc;
 		ParseInfo&   _info;
 
@@ -1362,7 +1353,7 @@ namespace configuru
 		}
 	}
 
-	Parser::Parser(const char* str, ParseOptions options, DocInfo_SP doc, ParseInfo& info) : _doc(doc), _info(info)
+	Parser::Parser(const char* str, const FormatOptions& options, DocInfo_SP doc, ParseInfo& info) : _doc(doc), _info(info)
 	{
 		_options    = options;
 		_line_nr    = 1;
@@ -2084,13 +2075,13 @@ namespace configuru
 
 	// ----------------------------------------------------------------------------------------
 
-	Config parse_config(const char* str, ParseOptions options, DocInfo_SP doc, ParseInfo& info) throw(parse_error)
+	Config parse_config(const char* str, const FormatOptions& options, DocInfo_SP doc, ParseInfo& info) throw(parse_error)
 	{
 		Parser p(str, options, doc, info);
 		return p.top_level();
 	}
 
-	Config parse_config(const char* str, ParseOptions options, const char* name) throw(parse_error)
+	Config parse_config(const char* str, const FormatOptions& options, const char* name) throw(parse_error)
 	{
 		ParseInfo info;
 		return parse_config(str, options, std::make_shared<DocInfo>(name), info);
@@ -2114,14 +2105,14 @@ namespace configuru
 		return contents;
 	}
 
-	Config parse_config_file(const std::string& path, ParseOptions options, DocInfo_SP doc, ParseInfo& info) throw(parse_error)
+	Config parse_config_file(const std::string& path, const FormatOptions& options, DocInfo_SP doc, ParseInfo& info) throw(parse_error)
 	{
 		// auto file = util::FILEWrapper::read_text_file(path);
 		auto file = read_text_file(path.c_str());
 		return parse_config(file.c_str(), options, doc, info);
 	}
 
-	Config parse_config_file(const std::string& path, ParseOptions options) throw(parse_error)
+	Config parse_config_file(const std::string& path, const FormatOptions& options) throw(parse_error)
 	{
 		ParseInfo info;
 		return parse_config_file(path, options, std::make_shared<DocInfo>(path), info);
@@ -2200,35 +2191,35 @@ namespace configuru
 
 	struct Writer
 	{
-		DocInfo_SP        doc;
-		FormatOptions     options;
-		std::stringstream ss;
+		DocInfo_SP        _doc;
+		FormatOptions     _options;
+		std::stringstream _ss;
 
 		void write_indent(unsigned indent)
 		{
 			for (unsigned i=0; i<indent; ++i) {
-				ss << "\t";
+				_ss << "\t";
 			}
 		}
 
 		void write_prefix_comments(unsigned indent, const Comments& comments)
 		{
-			if (options.json) { return; }
+			if (!_options.write_comments) { return; }
 			if (!comments.empty()) {
-				ss << "\n";
+				_ss << "\n";
 				for (auto&& c : comments) {
 					write_indent(indent);
-					ss << c << "\n";
+					_ss << c << "\n";
 				}
 			}
 		}
 
 		void write_postfix_comments(unsigned indent, const Comments& comments)
 		{
-			if (options.json) { return; }
+			if (!_options.write_comments) { return; }
 			(void)indent; // TODO: reindent comments
 			for (auto&& c : comments) {
-				ss << " " << c;
+				_ss << " " << c;
 			}
 		}
 
@@ -2240,9 +2231,9 @@ namespace configuru
 		void write_value(unsigned indent, const Config& config,
 							  bool write_prefix, bool write_postfix)
 		{
-			if (!options.json && config.doc() && config.doc() != this->doc) {
-				write_config_file(config.doc()->filename, config);
-				ss << "#include <" << config.doc()->filename << ">";
+			if (_options.allow_macro && config.doc() && config.doc() != _doc) {
+				write_config_file(config.doc()->filename, config, _options);
+				_ss << "#include <" << config.doc()->filename << ">";
 				return;
 			}
 
@@ -2251,56 +2242,56 @@ namespace configuru
 			}
 
 			if (config.is_null()) {
-				ss << "null";
+				_ss << "null";
 			} else if (config.is_bool()) {
-				ss << ((bool)config ? "true" : "false");
+				_ss << ((bool)config ? "true" : "false");
 			} else if (config.is_int()) {
-				ss << (int64_t)config;
+				_ss << (int64_t)config;
 			} else if (config.is_float()) {
 				write_number( (double)config );
 			} else if (config.is_string()) {
 				write_string(config.as_string());
 			} else if (config.is_list()) {
 				if (config.list_size() == 0 && config.pre_end_brace_comments.empty()) {
-					ss << "[ ]";
+					_ss << "[ ]";
 				} else if (is_simple_list(config)) {
-					ss << "[ ";
+					_ss << "[ ";
 					auto&& list = config.as_list();
 					for (size_t i = 0; i < list.size(); ++i) {
 						write_value(indent + 1, list[i], false, true);
-						if (options.json && i + 1 < list.size()) {
-							ss << ", ";
+						if (_options.list_omit_comma || i + 1 == list.size()) {
+							_ss << " ";
 						} else {
-							ss << " ";
+							_ss << ", ";
 						}
 					}
 					write_pre_brace_comments(indent + 1, config.pre_end_brace_comments);
-					ss << "]";
+					_ss << "]";
 				} else {
-					ss << "[\n";
+					_ss << "[\n";
 					auto&& list = config.as_list();
 					for (size_t i = 0; i < list.size(); ++i) {
 						write_prefix_comments(indent + 1, list[i].prefix_comments);
 						write_indent(indent + 1);
 						write_value(indent + 1, list[i], false, true);
-						if (options.json && i + 1 < list.size()) {
-							ss << ",\n";
+						if (_options.list_omit_comma || i + 1 == list.size()) {
+							_ss << "\n";
 						} else {
-							ss << "\n";
+							_ss << ",\n";
 						}
 					}
 					write_pre_brace_comments(indent + 1, config.pre_end_brace_comments);
 					write_indent(indent);
-					ss << "]";
+					_ss << "]";
 				}
 			} else if (config.is_map()) {
 				if (config.map_size() == 0 && config.pre_end_brace_comments.empty()) {
-					ss << "{ }";
+					_ss << "{ }";
 				} else {
-					ss << "{\n";
+					_ss << "{\n";
 					write_map_contents(indent + 1, config);
 					write_indent(indent);
-					ss << "}";
+					_ss << "}";
 				}
 			} else {
 				throw std::runtime_error("Cannot serialize Config");
@@ -2336,19 +2327,19 @@ namespace configuru
 				write_prefix_comments(indent, value.prefix_comments);
 				write_indent(indent);
 				write_key(it->first);
-				if (!options.json && value.is_map() && value.map_size() != 0) {
-					ss << " ";
+				if (_options.omit_colon_before_map && value.is_map() && value.map_size() != 0) {
+					_ss << " ";
 				} else {
-					ss << ": ";
+					_ss << ": ";
 					for (size_t i=it->first.size(); i<longest_key; ++i) {
-						ss << " ";
+						_ss << " ";
 					}
 				}
 				write_value(indent, value, false, true);
-				if (options.json && i + 1 < pairs.size()) {
-					ss << ",\n";
+				if (_options.list_omit_comma || i + 1 == pairs.size()) {
+					_ss << "\n";
 				} else {
-					ss << "\n";
+					_ss << ",\n";
 				}
 				i += 1;
 			}
@@ -2358,10 +2349,10 @@ namespace configuru
 
 		void write_key(const std::string& str)
 		{
-			if (options.json || !is_identifier(str.c_str())) {
-				write_string(str);
+			if (_options.identifiers_keys && is_identifier(str.c_str())) {
+				_ss << str;
 			} else {
-				ss << str;
+				write_string(str);
 			}
 		}
 
@@ -2369,7 +2360,7 @@ namespace configuru
 		{
 			auto as_int = (int64_t)val;
 			if ((double)as_int == val) {
-				ss << as_int;
+				_ss << as_int;
 			} else if (std::isfinite(val)) {
 				// No unnecessary zeros.
 
@@ -2382,10 +2373,10 @@ namespace configuru
 					temp_ss << as_float;
 					auto str = temp_ss.str();
 					if (std::strtof(str.c_str(), nullptr) == as_float) {
-						ss << str;
+						_ss << str;
 						return;
 					} else {
-						ss << std::setprecision(8) << as_float;
+						_ss << std::setprecision(8) << as_float;
 					}
 				} else {
 					// Try short and nice:
@@ -2394,17 +2385,26 @@ namespace configuru
 					temp_ss << val;
 					auto str = temp_ss.str();
 					if (std::strtod(str.c_str(), nullptr) == val) {
-						ss << str;
+						_ss << str;
 					} else {
-						ss << std::setprecision(16) << val;
+						_ss << std::setprecision(16) << val;
 					}
 				}
 			} else if (val == +std::numeric_limits<double>::infinity()) {
-				ss << "+inf";
+				if (!_options.inf) {
+					CONFIGURU_ONERROR("Can't encode infinity");
+				}
+				_ss << "+inf";
 			} else if (val == -std::numeric_limits<double>::infinity()) {
-				ss << "-inf";
+				if (!_options.inf) {
+					CONFIGURU_ONERROR("Can't encode negative infinity");
+				}
+				_ss << "-inf";
 			} else {
-				ss << "+NaN";
+				if (!_options.nan) {
+					CONFIGURU_ONERROR("Can't encode NaN");
+				}
+				_ss << "+NaN";
 			}
 		}
 
@@ -2412,7 +2412,7 @@ namespace configuru
 		{
 			const size_t LONG_LINE = 240;
 
-			if (!options.json                       ||
+			if (!_options.str_python_multiline       ||
 			    str.find('\n') == std::string::npos ||
 				str.length() < LONG_LINE            ||
 				str.find("\"\"\"") != std::string::npos)
@@ -2426,8 +2426,8 @@ namespace configuru
 		void write_hex_digit(unsigned num)
 		{
 			CONFIGURU_ASSERT(num < 16u);
-			if (num < 10u) { ss << num; }
-			else { ss << ('a' + num - 10); }
+			if (num < 10u) { _ss << num; }
+			else { _ss << ('a' + num - 10); }
 		}
 
 		void write_hex_16(uint16_t n)
@@ -2440,50 +2440,50 @@ namespace configuru
 
 		void write_unicode_16(uint16_t c)
 		{
-			ss << "\\u";
+			_ss << "\\u";
 			write_hex_16(c);
 		}
 
 		void write_quoted_string(const std::string& str) {
-			ss << '"';
+			_ss << '"';
 			for (char c : str) {
-				if      (c == '\\') { ss << "\\\\"; }
-				else if (c == '\"') { ss << "\\\""; }
-				//else if (c == '\'') { ss << "\\\'"; }
-				else if (c == '\0') { ss << "\\0";  }
-				else if (c == '\b') { ss << "\\b";  }
-				else if (c == '\f') { ss << "\\f";  }
-				else if (c == '\n') { ss << "\\n";  }
-				else if (c == '\r') { ss << "\\r";  }
-				else if (c == '\t') { ss << "\\t";  }
+				if      (c == '\\') { _ss << "\\\\"; }
+				else if (c == '\"') { _ss << "\\\""; }
+				//else if (c == '\'') { _ss << "\\\'"; }
+				else if (c == '\0') { _ss << "\\0";  }
+				else if (c == '\b') { _ss << "\\b";  }
+				else if (c == '\f') { _ss << "\\f";  }
+				else if (c == '\n') { _ss << "\\n";  }
+				else if (c == '\r') { _ss << "\\r";  }
+				else if (c == '\t') { _ss << "\\t";  }
 				else if (0 <= c && c < 0x20) { write_unicode_16(c); }
-				else { ss << c; }
+				else { _ss << c; } // TODO: add option to quote
 			}
-			ss << '"';
+			_ss << '"';
 		}
 
 		void write_verbatim_string(const std::string& str)
 		{
-			ss << "\"\"\"";
-			ss << str;
-			ss << "\"\"\"";
+			_ss << "\"\"\"";
+			_ss << str;
+			_ss << "\"\"\"";
 		}
 	}; // struct Writer
 
-	std::string write_config(const Config& config, FormatOptions options)
+	std::string write_config(const Config& config, const FormatOptions& options)
 	{
 		Writer w;
-		w.options = options;
-		w.doc = config.doc();
+		w._options = options;
+		w._doc     = config.doc();
 
-		if (!options.json && config.is_map()) {
+		if (options.implicit_top_map && config.is_map()) {
 			w.write_map_contents(0, config);
 		} else {
 			w.write_value(0, config, true, true);
-			w.ss << "\n"; // Good form
+			w._ss << "\n"; // Good form
 		}
 
-		return w.ss.str();
+		return w._ss.str();
 	}
 
 	static void write_text_file(const char* path, const std::string& data)
@@ -2499,7 +2499,7 @@ namespace configuru
 		}
 	}
 
-	void write_config_file(const std::string& path, const configuru::Config& config, FormatOptions options)
+	void write_config_file(const std::string& path, const configuru::Config& config, const FormatOptions& options)
 	{
 		auto str = write_config(config, options);
 		write_text_file(path.c_str(), str);

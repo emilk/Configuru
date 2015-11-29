@@ -91,9 +91,8 @@ Goals:
 * Code cleanup.
 * Nicer syntax for creating configs.
 * Compact printing.
-* Don't wrint unicode with \U in JSON mode.
-* Dissallow space before color in map.
-* Combine FormatOptions and ParseOptions
+* Dissallow space before colon in map.
+* Customize indentation (tabs, spaces, ...).
 
 
 Config format

@@ -23,7 +23,7 @@ std::vector<fs::path> list_files(fs::path directory, std::string extension)
     return result;
 }
 
-void test(ParseOptions options, bool should_pass, fs::path dir, std::string extension, size_t& num_run, size_t& num_failed)
+void test(FormatOptions options, bool should_pass, fs::path dir, std::string extension, size_t& num_run, size_t& num_failed)
 {
 	for (auto path : list_files(dir, extension))
 	{
@@ -47,15 +47,7 @@ void test(ParseOptions options, bool should_pass, fs::path dir, std::string exte
 	}
 }
 
-const char* TEST_CFG = R"(
-pi:   3.14,
-list: [1 2 3 4]
-obj {
-	nested_value: 42
-}
-)";
-
-int main()
+void run_unit_tests()
 {
 	size_t num_run = 0;
 	size_t num_failed = 0;
@@ -87,18 +79,29 @@ int main()
 	}
 	printf("\n\n");
 	fflush(stdout);
+}
 
-	auto cfg = configuru::parse_config(TEST_CFG, ParseOptions(), "test_cfg");
+const char* TEST_CFG = R"(
+pi:   3.14,
+list: [1 2 3 4]
+obj {
+	nested_value: 42
+}
+)";
+
+int main()
+{
+	run_unit_tests();
+
+	auto cfg = configuru::parse_config(TEST_CFG, FormatOptions(), "test_cfg");
 	std::cout << "pi: " << cfg["pi"] << std::endl;
 	cfg.check_dangling();
 
 	std::cout << std::endl;
-	std::cout << "// sjson:" << std::endl;
-	configuru::FormatOptions options;
-	std::cout << configuru::write_config(cfg, options);
+	std::cout << "// cfg:" << std::endl;
+	std::cout << configuru::write_config(cfg, configuru::CFG);
 
 	std::cout << std::endl;
 	std::cout << "// Json:" << std::endl;
-	options.json = true;
-	std::cout << configuru::write_config(cfg, options);
+	std::cout << configuru::write_config(cfg, configuru::JSON);
 }
