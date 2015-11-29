@@ -89,7 +89,7 @@ int main()
 	fflush(stdout);
 
 	auto cfg = configuru::parse_config(TEST_CFG, ParseOptions(), "test_cfg");
-	std::cout << "pi: " << (float)cfg["pi"] << std::endl;
+	std::cout << "pi: " << cfg["pi"] << std::endl;
 	cfg.check_dangling();
 
 	std::cout << std::endl;

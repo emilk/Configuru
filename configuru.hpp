@@ -57,7 +57,7 @@ Usage (parsing):
 
 	for (auto& p : cfg["map"].as_map()) {
 		std::cout << "Key: "   << p.first << std::endl;
-		std::cout << "Value: " << (float)p.second;
+		std::cout << "Value: " << p.second;
 	}
 
 	cfg.check_dangling(); // Make sure we haven't forgot reading a key!
@@ -75,25 +75,6 @@ Usage (writing):
 	cfg["list"] = Config::new_list();
 	cfg["list"].push_back(Config(42));
 	write_config_file("output.cfg", cfg);
-
-Goals:
-========
-* Debugable:
-	* Find typos most config libs miss (typos in keys).
-	* Cleverly help to point out mismatched braces in the right place.
-	* Easily find source of typos with line numbers and helpful error messages.
-* Allow comments in configs.
-* Pretty printing.
-* Extensible.
-
-# Non-goals:
-* Low overhead
-
-# TODO:
-* Strict json read/write.
-* operator << for printing Config:s.
-* Code cleanup.
-* Nicer syntax for creating configs.
 
 
 Config format
@@ -655,6 +636,11 @@ namespace configuru
 
 	// ------------------------------------------------------------------------
 
+	// Prints as JSON.
+	std::ostream& operator<<(std::ostream& os, const Config& cfg);
+
+	// ------------------------------------------------------------------------
+
 	template<class Config, class Visitor>
 	void visit_configs(Config&& config, Visitor&& visitor)
 	{
@@ -1107,6 +1093,13 @@ namespace configuru
 		} else if (_type != t) {
 			CONFIGURU_ONERROR(where() + "Expected " + type_str(t) + ", got " + type_str(_type));
 		}
+	}
+
+	std::ostream& operator<<(std::ostream& os, const Config& cfg)
+	{
+		FormatOptions fo;
+		fo.json = true;
+		return os << write_config(cfg, fo);
 	}
 }
 

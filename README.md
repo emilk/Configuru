@@ -79,6 +79,7 @@ Goals:
 	* Find typos most config libs miss (typos in keys).
 	* Cleverly help to point out mismatched braces in the right place.
 	* Easily find source of typos with line numbers and helpful error messages.
+* Configurable:
 * Allow comments in configs.
 * Pretty printing.
 * Extensible.
@@ -87,10 +88,12 @@ Goals:
 * Low overhead
 
 # TODO:
-* Strict json read/write.
-* operator << for printing Config:s.
 * Code cleanup.
 * Nicer syntax for creating configs.
+* Compact printing.
+* Don't wrint unicode with \U in JSON mode.
+* Dissallow space before color in map.
+* Combine FormatOptions and ParseOptions
 
 
 Config format
