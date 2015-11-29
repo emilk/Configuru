@@ -1218,7 +1218,7 @@ namespace configuru
 			Comments comments;
 			bool did_skip = skip_white(&comments, out_indentation, false);
 			if (!comments.empty()) {
-				config->comments().prefix = comments;
+				append(config->comments().prefix, std::move(comments));
 			}
 			return did_skip;
 		}
@@ -1227,7 +1227,7 @@ namespace configuru
 			int indentation;
 			bool did_skip = skip_white(&comments, indentation, true);
 			if (!comments.empty()) {
-				config->comments().postfix = comments;
+				append(config->comments().postfix, std::move(comments));
 			}
 			return did_skip;
 		}
@@ -1668,9 +1668,14 @@ namespace configuru
 	{
 		array.make_array();
 
+		Comments next_prefix_comments;
+
 		for (;;)
 		{
 			Config value;
+			if (!next_prefix_comments.empty()) {
+				std::swap(value.comments().prefix, next_prefix_comments);
+			}
 			int line_indentation;
 			skip_pre_white(&value, line_indentation);
 
@@ -1701,6 +1706,8 @@ namespace configuru
 
 			bool has_separator;
 			parse_value(value, &has_separator);
+			int ignore;
+			skip_white(&next_prefix_comments, ignore, false);
 			bool has_comma = _ptr[0] == ',';
 
 			if (has_comma) {
@@ -1747,9 +1754,14 @@ namespace configuru
 	{
 		object.make_object();
 
+		Comments next_prefix_comments;
+
 		for (;;)
 		{
 			Config value;
+			if (!next_prefix_comments.empty()) {
+				std::swap(value.comments().prefix, next_prefix_comments);
+			}
 			int line_indentation;
 			skip_pre_white(&value, line_indentation);
 
@@ -1809,6 +1821,8 @@ namespace configuru
 
 			bool has_separator;
 			parse_value(value, &has_separator);
+			int ignore;
+			skip_white(&next_prefix_comments, ignore, false);
 			bool has_comma = _ptr[0] == ',';
 
 			if (has_comma) {
