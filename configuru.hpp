@@ -1258,8 +1258,43 @@ namespace configuru
 			return (unsigned)(_ptr - _line_start + 1);
 		}
 
+		const char* start_of_line() const
+		{
+			return _line_start;
+		}
+
+		const char* end_of_line() const
+		{
+			const char* p = _ptr;
+			while (*p && *p != '\r' && *p != '\n') {
+				++p;
+			}
+			return p;
+		}
+
 		void throw_error(const std::string& desc) {
-			throw parse_error(_doc, _line_nr, column(), desc + " (at " + quote(_ptr[0]) + ")");
+			const char* sol = start_of_line();
+			const char* eol = end_of_line();
+			std::string orientation;
+			for (const char* p = sol; p != eol; ++p) {
+				if (*p == '\t') {
+					orientation += "    ";
+				} else {
+					orientation.push_back(*p);
+				}
+			}
+
+			orientation += "\n";
+			for (const char* p = sol; p != _ptr; ++p) {
+				if (*p == '\t') {
+					orientation += "    ";
+				} else {
+					orientation.push_back(' ');
+				}
+			}
+			orientation += "^";
+
+			throw parse_error(_doc, _line_nr, column(), desc + "\n" + orientation);
 		}
 
 		void throw_indentation_error(int found_tabs, int expected_tabs) {
@@ -1757,7 +1792,7 @@ namespace configuru
 			}
 
 			if (!_options.map_duplicate_keys && map.has_key(key)) {
-				throw_error("Duplicate key: \"" + key + "\"");
+				throw_error("Duplicate key: \"" + key + "\". Already set at " + map[key].where());
 			}
 
 			bool has_separator;
@@ -1963,7 +1998,7 @@ namespace configuru
 						auto num_bytes_written = encode_utf8(str, unicode);
 						parse_assert(num_bytes_written > 0, "Bad unicode codepoint");
 					} else {
-						throw_error("Unknown escape character");
+						throw_error("Unknown escape character " + quote(_ptr[0]));
 					}
 				} else {
 					str += _ptr[0];

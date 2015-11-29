@@ -37,10 +37,10 @@ void test(ParseOptions options, bool should_pass, fs::path dir, std::string exte
 			}
 		} catch (std::exception& e) {
 			if (should_pass) {
-				std::cout << loguru::terminal_red() << "FAILED: " << loguru::terminal_reset() << path.filename() << ": " << e.what() << std::endl;
+				std::cout << loguru::terminal_red() << "FAILED: " << loguru::terminal_reset() << path.filename() << ": " << e.what() << std::endl << std::endl;
 				num_failed += 1;
 			} else {
-				std::cout << loguru::terminal_green() << "PASS: " << loguru::terminal_reset() << path.filename() << ": " << e.what() << std::endl;
+				std::cout << loguru::terminal_green() << "PASS: " << loguru::terminal_reset() << path.filename() << ": " << e.what() << std::endl << std::endl;
 			}
 		}
 		num_run += 1;
