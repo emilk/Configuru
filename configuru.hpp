@@ -419,7 +419,8 @@ namespace configuru
 			return as_object().count(key) != 0;
 		}
 
-		bool erase_key(const std::string& key);
+		// Only for objects.
+		bool erase(const std::string& key);
 
 		template<typename T>
 		T get_or(const std::string& key, const T& default_value) const;
@@ -996,7 +997,7 @@ namespace configuru
 		return entry.value;
 	}
 
-	bool Config::erase_key(const std::string& key)
+	bool Config::erase(const std::string& key)
 	{
 		auto& object = as_object();
 		auto it = object.find(key);
@@ -2495,9 +2496,9 @@ namespace configuru
 					return a->first < b->first;
 				});
 			} else {
-			std::sort(begin(pairs), end(pairs), [](auto a, auto b) {
-				return a->second.nr < b->second.nr;
-			});
+				std::sort(begin(pairs), end(pairs), [](auto a, auto b) {
+					return a->second.nr < b->second.nr;
+				});
 			}
 			size_t i = 0;
 			for (auto&& it : pairs) {

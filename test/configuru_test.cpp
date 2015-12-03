@@ -246,8 +246,22 @@ void test_comments()
 {
 	auto in_path  = "../../test_suite/comments_in.cfg";
 	auto out_path = "../../test_suite/comments_out.cfg";
+	auto out_2_path = "../../test_suite/comments_out_2.cfg";
 	auto data = parse_config_file(in_path, configuru::CFG);
 	write_config_file(out_path, data, configuru::CFG);
+
+	data["number"] = 42;
+	data["array"].push_back("new value");
+	data["object"]["new_key"] = true;
+
+	Config rearranged = data;
+	rearranged["indent"] = {
+		{ "array",  data["array"],  },
+		{ "object", data["object"], },
+	};
+	rearranged.erase("object");
+	rearranged.erase("array");
+	write_config_file(out_2_path, rearranged, configuru::CFG);
 }
 
 int main()
