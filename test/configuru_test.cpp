@@ -158,6 +158,11 @@ void parse_and_print()
 	std::cout << configuru::write_config(cfg, format);
 
 	std::cout << std::endl;
+	std::cout << "// JSON with keys sorted lexicographically:" << std::endl;
+	format.sort_keys = true;
+	std::cout << configuru::write_config(cfg, format);
+
+	std::cout << std::endl;
 	std::cout << "// Compact JSON:" << std::endl;
 	format = configuru::JSON;
 	format.indentation = "";

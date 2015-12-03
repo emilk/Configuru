@@ -638,6 +638,10 @@ namespace configuru
 	{
 		// This struct basically contain all differences with JSON.
 
+		/* Indentation should be a single tab,
+		   multiple spaces or an empty string.
+		    An empty string means the output will be compact. */
+		std::string indentation              = "\t";
 		bool        enforce_indentation      = true;  // Must indent with tabs?
 
 		// Top file:
@@ -681,10 +685,8 @@ namespace configuru
 		// When writing:
 		bool        write_comments           = true;
 
-		/* Indentation should be a single tab,
-		   multiple spaces or an empty string.
-		    An empty string means the output will be compact. */
-		std::string indentation              = "\t";
+		// Sort keys lexicographically. If false, sort by order they where added.
+		bool        sort_keys                = false;
 
 		bool compact() const { return indentation.empty(); }
 	};
@@ -693,6 +695,7 @@ namespace configuru
 	{
 		FormatOptions options;
 
+		options.indentation              = "\t";
 		options.enforce_indentation      = false;
 
 		// Top file:
@@ -735,7 +738,7 @@ namespace configuru
 
 		// When writing:
 		options.write_comments           = false;
-		options.indentation              = "\t";
+		options.sort_keys                = false;
 
 		return options;
 	}
@@ -2487,9 +2490,15 @@ namespace configuru
 					}
 				#endif
 			}
+			if (_options.sort_keys) {
+				std::sort(begin(pairs), end(pairs), [](auto a, auto b) {
+					return a->first < b->first;
+				});
+			} else {
 			std::sort(begin(pairs), end(pairs), [](auto a, auto b) {
 				return a->second.nr < b->second.nr;
 			});
+			}
 			size_t i = 0;
 			for (auto&& it : pairs) {
 				auto&& value = it->second.value;
