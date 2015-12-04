@@ -1697,20 +1697,20 @@ namespace configuru
 		}
 		else if (_ptr[0] == 'n') {
 			parse_assert(_ptr[1]=='u' && _ptr[2]=='l' && _ptr[3]=='l', "Expected 'null'");
+			parse_assert(!IDENT_CHARS[_ptr[4]], "Expected 'null'");
 			_ptr += 4;
-			parse_assert(!IDENT_CHARS[_ptr[0]], "Expected 'null'");
 			dst = nullptr;
 		}
 		else if (_ptr[0] == 't') {
 			parse_assert(_ptr[1]=='r' && _ptr[2]=='u' && _ptr[3]=='e', "Expected 'true'");
+			parse_assert(!IDENT_CHARS[_ptr[4]], "Expected 'true'");
 			_ptr += 4;
-			parse_assert(!IDENT_CHARS[_ptr[0]], "Expected 'true'");
 			dst = true;
 		}
 		else if (_ptr[0] == 'f') {
 			parse_assert(_ptr[1]=='a' && _ptr[2]=='l' && _ptr[3]=='s' && _ptr[4]=='e', "Expected 'false'");
+			parse_assert(!IDENT_CHARS[_ptr[5]], "Expected 'false'");
 			_ptr += 5;
-			parse_assert(!IDENT_CHARS[_ptr[0]], "Expected 'false'");
 			dst = false;
 		}
 		else if (_ptr[0] == '{') {
@@ -1726,21 +1726,21 @@ namespace configuru
 			// Some kind of number:
 
 			if (_ptr[0] == '-' && _ptr[1] == 'i' && _ptr[2]=='n' && _ptr[3]=='f') {
+				parse_assert(!IDENT_CHARS[_ptr[4]], "Expected -inf");
 				parse_assert(_options.inf, "infinity forbidden.");
 				_ptr += 4;
-				parse_assert(!IDENT_CHARS[_ptr[0]], "Expected -inf");
 				dst = -std::numeric_limits<double>::infinity();
 			}
 			else if (_ptr[0] == '+' && _ptr[1] == 'i' && _ptr[2]=='n' && _ptr[3]=='f') {
+				parse_assert(!IDENT_CHARS[_ptr[4]], "Expected +inf");
 				parse_assert(_options.inf, "infinity forbidden.");
 				_ptr += 4;
-				parse_assert(!IDENT_CHARS[_ptr[0]], "Expected +inf");
 				dst = std::numeric_limits<double>::infinity();
 			}
 			else if (_ptr[0] == '+' && _ptr[1] == 'N' && _ptr[2]=='a' && _ptr[3]=='N') {
+				parse_assert(!IDENT_CHARS[_ptr[4]], "Expected +NaN");
 				parse_assert(_options.nan, "NaN (Not a Number) forbidden.");
 				_ptr += 4;
-				parse_assert(!IDENT_CHARS[_ptr[0]], "Expected +NaN");
 				dst = std::numeric_limits<double>::quiet_NaN();
 			} else {
 				parse_finite_number(dst);
@@ -1895,6 +1895,7 @@ namespace configuru
 				throw_indentation_error(_indentation, line_indentation);
 			}
 
+			auto pre_key_state = get_state();
 			std::string key;
 
 			if (IDENT_STARTERS[_ptr[0]] && !is_reserved_identifier(_ptr)) {
@@ -1908,6 +1909,11 @@ namespace configuru
 				key = parse_string();
 			} else {
 				throw_error("Object key expected (either an identifier or a quoted string), got " + quote(_ptr[0]));
+			}
+
+			if (!_options.object_duplicate_keys && object.has_key(key)) {
+				set_state(pre_key_state);
+				throw_error("Duplicate key: \"" + key + "\". Already set at " + object[key].where());
 			}
 
 			bool space_after_key = skip_white_ignore_comments();
@@ -1924,10 +1930,6 @@ namespace configuru
 				} else {
 					throw_error("Expected : after object key");
 				}
-			}
-
-			if (!_options.object_duplicate_keys && object.has_key(key)) {
-				throw_error("Duplicate key: \"" + key + "\". Already set at " + object[key].where());
 			}
 
 			bool has_separator;
