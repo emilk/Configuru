@@ -124,6 +124,7 @@ Tabs anywhere else is not allowed.
 #define CONFIGURU_HEADER_HPP
 
 #include <initializer_list>
+#include <map>
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
@@ -194,8 +195,9 @@ namespace configuru
 		Comments postfix; // After the value, on the same line. Like this.
 		Comments pre_end_brace; // Before the closing } or ]
 
-		bool empty() const;
+		ConfigComments() {}
 
+		bool empty() const;
 		void append(ConfigComments&& other);
 	};
 
@@ -222,7 +224,7 @@ namespace configuru
 		using ObjectEntry = Config_Entry<Config>;
 
 		using ConfigArrayImpl = std::vector<Config>;
-		using ConfigObjectImpl = std::unordered_map<std::string, ObjectEntry>;
+		using ConfigObjectImpl = std::map<std::string, ObjectEntry>;
 		struct ConfigArray {
 			std::atomic<unsigned> ref_count { 1 };
 			ConfigArrayImpl       impl;
@@ -237,11 +239,12 @@ namespace configuru
 
 		Config()               : _type(Invalid) { }
 		Config(std::nullptr_t) : _type(Null)    { }
-		Config(double  f) : _type(Float) { _u.f = f; }
-		Config(bool    b) : _type(Bool)  { _u.b = b; }
-		Config(int     i) : _type(Int)   { _u.i = i; }
-		Config(int64_t i) : _type(Int)   { _u.i = i; }
-		Config(size_t  i) : _type(Int)
+		Config(double    f) : _type(Float) { _u.f = f; }
+		Config(bool      b) : _type(Bool)  { _u.b = b; }
+		Config(int       i) : _type(Int)   { _u.i = i; }
+		Config(int64_t   i) : _type(Int)   { _u.i = i; }
+		Config(long long i) : _type(Int)   { _u.i = i; }
+		Config(size_t    i) : _type(Int)
 		{
 			if ((i & 0x8000000000000000ull) != 0) {
 				CONFIGURU_ONERROR("Integer too large to fit into 63 bits");
@@ -298,9 +301,8 @@ namespace configuru
 		// Where in source where we defined?
 		std::string where() const;
 		unsigned line() const { return _line; }
-		auto&&   doc()  const { return _doc;  }
+		const DocInfo_SP& doc() const { return _doc; }
 		void set_doc(const DocInfo_SP& doc) { _doc = doc; }
-
 		// ----------------------------------------
 		// Convertors:
 
@@ -787,7 +789,8 @@ This will define all the Configuru functions so that the linker may find them.
 // ----------------------------------------------------------------------------
 namespace configuru
 {
-	void DocInfo::append_include_info(std::string& ret, const std::string& indent) const {
+	void DocInfo::append_include_info(std::string& ret, const std::string& indent) const
+	{
 		if (!includers.empty()) {
 			ret += ", included at:\n";
 			for (auto&& includer : includers) {
@@ -799,11 +802,15 @@ namespace configuru
 		}
 	}
 
-	struct BadLookupInfo {
+	struct BadLookupInfo
+	{
 		DocInfo_SP            doc;      // Of parent object
 		unsigned              line;     // Of parent object
 		std::string           key;
-		std::atomic<unsigned> ref_count { 1 };
+		std::atomic<unsigned> ref_count;
+
+		BadLookupInfo(DocInfo_SP doc, unsigned line, std::string key)
+			: doc(std::move(doc)), line(line), key(std::move(key)) {}
 	};
 
 	Config::Config(const char* str) : _type(String)
@@ -2479,7 +2486,8 @@ namespace configuru
 		{
 			// Write in same order as input:
 			auto&& object = config.as_object();
-			std::vector<Config::ConfigObjectImpl::const_iterator> pairs;
+			using Iterator = Config::ConfigObjectImpl::const_iterator;
+			std::vector<Iterator> pairs;
 			size_t longest_key = 0;
 			for (auto it=object.begin(); it!=object.end(); ++it) {
 				pairs.push_back(it);
@@ -2491,15 +2499,17 @@ namespace configuru
 					}
 				#endif
 			}
+
 			if (_options.sort_keys) {
-				std::sort(begin(pairs), end(pairs), [](auto a, auto b) {
+				std::sort(begin(pairs), end(pairs), [](const Iterator& a, const Iterator& b) {
 					return a->first < b->first;
 				});
 			} else {
-				std::sort(begin(pairs), end(pairs), [](auto a, auto b) {
+				std::sort(begin(pairs), end(pairs), [](const Iterator& a, const Iterator& b) {
 					return a->second.nr < b->second.nr;
 				});
 			}
+
 			size_t i = 0;
 			for (auto&& it : pairs) {
 				auto&& value = it->second.value;

@@ -13,7 +13,7 @@ include_directories(${Boost_INCLUDE_DIRS})
 
 MESSAGE(STATUS "CMAKE_BUILD_TYPE: ${CMAKE_BUILD_TYPE}")
 
-add_compile_options(-std=c++14 -Werror -Wall -Wextra -Wno-char-subscripts)
+add_compile_options(-std=c++11 -Werror -Wall -Wextra -Wno-char-subscripts)
 
 file(GLOB source
     "${CMAKE_CURRENT_SOURCE_DIR}/*.cpp"
