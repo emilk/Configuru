@@ -60,8 +60,6 @@ Accessing a bool beleiving it to be a float: `config.json:2: Expected float, got
 Accessing a key which has not been set: `config.json:1: Failed to find key 'does_not_exist'`. Again, the line where the object is defined at is mentioned.
 
 
-
-
 Usage (general):
 ----------------
 For using:
@@ -75,7 +73,7 @@ And in one .cpp file:
 Usage (parsing):
 ----------------
 
-	Config cfg = configuru::parse_config_file("input.json");
+	Config cfg = configuru::parse_file("input.json");
 	float alpha = (float)cfg["alpha"];
 	if (cfg.has_key("beta")) {
 		std::string beta = (std::string)cfg["beta"];
@@ -91,7 +89,7 @@ Usage (parsing):
 
 	for (auto& p : cfg["object"].as_object()) {
 		std::cout << "Key: "   << p.first << std::endl;
-		std::cout << "Value: " << (float)p.second;
+		std::cout << "Value: " << p.second;
 	}
 
 	cfg.check_dangling(); // Make sure we haven't forgot reading a key!
@@ -99,7 +97,7 @@ Usage (parsing):
 	// You can modify the read config:
 	cfg["message"] = "goodbye";
 
-	write_config_file("output.cfg", cfg); // Will include comments in the original.
+	write_file("output.cfg", cfg); // Will include comments in the original.
 
 Usage (writing):
 ----------------
@@ -111,7 +109,7 @@ Usage (writing):
 		{ "key1", "value1" },
 		{ "key2", "value2" },
 	};
-	write_config_file("output.cfg", cfg);
+	write_file("output.cfg", cfg);
 
 Goals:
 ========
@@ -138,8 +136,8 @@ Config format
 Like JSON, but with simplifications. Example file:
 
 	values: [1 2 3 4 5 6]
-	object {
-		nested_key = +inf
+	object: {
+		nested_key: +inf
 	}
 	python_style: """This is a string
 	                 which spans many lines."""
@@ -147,10 +145,9 @@ Like JSON, but with simplifications. Example file:
 
 * Top-level can be key-value pairs, or a value.
 * Keys need not be quoted if identifiers.
-* = or : can be used to separate keys and values.
-* Key-value pairs need not be separated with ;
+* Key-value pairs need not be separated with ,
 * Array values need not be separated with ,
-* Trailing , allowed in arrays.
+* Trailing , allowed in arrays and objects.
 
 """ starts a verbatim multiline string
 
@@ -161,7 +158,60 @@ Numbers can be represented in any common form:
 
 +inf, -inf, +NaN are valid numbers
 
-key = { }   can be written as   key { }
-
 Indentation is enforced, and must be done with tabs.
 Tabs anywhere else is not allowed.
+
+Beautiful output
+----------------
+One of the great things about JSON is that it is human readable (as opposed to XML). Configuru goes to great lengths to make the output as readable as possible. Here's an example structure:
+
+	Config cfg{
+		{"float",       3.14f},
+		{"double",      3.14},
+		{"short_array", {1, 2, 3}},
+		{"long_array",  {"one", {"two", "things"}, "three"}},
+	};
+
+Here's how the output turns out in most JSON encoders (this one produced by the excellent [nlohmann json library](https://github.com/nlohmann/json)):
+
+	{
+	    "double": 3.14,
+	    "float": 3.14000010490417,
+	    "long_array": [
+	        "one",
+	        [
+	            "two",
+	            "things"
+	        ],
+	        "three"
+	    ],
+	    "short_array": [
+	        1,
+	        2,
+	        3
+	    ]
+	}
+
+In contrast, here's how the output looks in configuru:
+
+	{
+		"float":       3.14,
+		"double":      3.14,
+		"short_array": [ 1, 2, 3 ],
+		"long_array":  [
+			"one",
+			[ "two", "things" ],
+			"three"
+		]
+	}
+
+Note how Configuru refrains from unnecessary line breaks on short arrays and does not write superflous (and ugly!) trailing decimals. Configuru also writes the the keys of the objects in the same order as it was given (unless the `sort_keys` option is explicitly set). The aligned values is just a preference of mine, inspired by [how id software does it](http://kotaku.com/5975610/the-exceptional-beauty-of-doom-3s-source-code). Writing it in the CFG format it looks like this:
+
+	float:       3.14
+	double:      3.14
+	short_array: [ 1 2 3 ]
+	long_array:  [
+		"one"
+		[ "two" "things" ]
+		"three"
+	]

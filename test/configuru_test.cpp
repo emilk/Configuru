@@ -10,6 +10,8 @@
 #define CONFIGURU_IMPLEMENTATION 1
 #include "../configuru.hpp"
 
+#include "json.hpp"
+
 namespace fs = boost::filesystem;
 
 std::vector<fs::path> list_files(fs::path directory, std::string extension)
@@ -51,7 +53,7 @@ void test_code(std::string test_name, bool should_pass, size_t& num_run, size_t&
 void test_parse(FormatOptions options, bool should_pass, fs::path path, size_t& num_run, size_t& num_failed)
 {
 	test_code(path.filename().string(), should_pass, num_run, num_failed, [&](){
-		configuru::parse_config_file(path.string(), options);
+		configuru::parse_file(path.string(), options);
 	});
 }
 
@@ -60,6 +62,21 @@ void test_all_in(FormatOptions options, bool should_pass, fs::path dir, std::str
 	for (auto path : list_files(dir, extension)) {
 		test_parse(options, should_pass, path.string(), num_run, num_failed);
 	}
+}
+
+template<typename T>
+void test_roundtrip(FormatOptions options, T value, size_t& num_run, size_t& num_failed)
+{
+	std::string serialized = configuru::write(Config(value), options);
+	Config parsed_config = configuru::parse(serialized.c_str(), options, "roundtrip");
+	T parsed_value = (T)parsed_config;
+	if (value == parsed_value) {
+		std::cout << loguru::terminal_green() << "PASS: " << loguru::terminal_reset() << serialized << std::endl;
+	} else {
+		num_failed += 1;
+		std::cout << loguru::terminal_red() << "FAILED: " << loguru::terminal_reset() << "failed round-trip: " << serialized << std::endl;
+	}
+	num_run += 1;
 }
 
 void test_special(size_t& num_run, size_t& num_failed)
@@ -74,11 +91,18 @@ void test_special(size_t& num_run, size_t& num_failed)
 
 	format.indentation = "  ";
 	test_parse(format, true, "../../test_suite/special/two_spaces_indentation.json", num_run, num_failed);
+
+	test_roundtrip(JSON, 0.1,   num_run, num_failed);
+	test_roundtrip(JSON, 0.1f,  num_run, num_failed);
+	test_roundtrip(JSON, 3.14,  num_run, num_failed);
+	test_roundtrip(JSON, 3.14f, num_run, num_failed);
+	test_roundtrip(JSON, 3.14000010490417, num_run, num_failed);
+	test_roundtrip(JSON, 1234567890123456ll, num_run, num_failed);
 }
 
 void test_bad_usage(size_t& num_run, size_t& num_failed)
 {
-	auto config = configuru::parse_config_file("../../test_suite/special/config.json", configuru::JSON);
+	auto config = configuru::parse_file("../../test_suite/special/config.json", configuru::JSON);
 	test_code("access_bool_as_bool", true, num_run, num_failed, [&]{
 		auto b = (bool)config["some_bool"];
 		(void)b;
@@ -131,7 +155,7 @@ void run_unit_tests()
 const char* TEST_CFG = R"(
 pi:    3.14,
 array: [1 2 3 4]
-obj {
+obj:   {
 	// A comment
 	nested_value: 42
 }
@@ -139,34 +163,34 @@ obj {
 
 void parse_and_print()
 {
-	auto cfg = configuru::parse_config(TEST_CFG, FormatOptions(), "test_cfg");
+	auto cfg = configuru::parse(TEST_CFG, FormatOptions(), "test_cfg");
 	std::cout << "pi: " << cfg["pi"] << std::endl;
 	cfg.check_dangling();
 
 	std::cout << std::endl;
 	std::cout << "// CFG:" << std::endl;
-	std::cout << configuru::write_config(cfg, configuru::CFG);
+	std::cout << configuru::write(cfg, configuru::CFG);
 
 	std::cout << std::endl;
 	std::cout << "// JSON with tabs:" << std::endl;
-	std::cout << configuru::write_config(cfg, configuru::JSON);
+	std::cout << configuru::write(cfg, configuru::JSON);
 
 	std::cout << std::endl;
 	std::cout << "// JSON with two spaces:" << std::endl;
 	auto format = configuru::JSON;
 	format.indentation = "  ";
-	std::cout << configuru::write_config(cfg, format);
+	std::cout << configuru::write(cfg, format);
 
 	std::cout << std::endl;
 	std::cout << "// JSON with keys sorted lexicographically:" << std::endl;
 	format.sort_keys = true;
-	std::cout << configuru::write_config(cfg, format);
+	std::cout << configuru::write(cfg, format);
 
 	std::cout << std::endl;
 	std::cout << "// Compact JSON:" << std::endl;
 	format = configuru::JSON;
 	format.indentation = "";
-	std::cout << configuru::write_config(cfg, format);
+	std::cout << configuru::write(cfg, format);
 
 	std::cout << std::endl;
 }
@@ -247,8 +271,8 @@ void test_comments()
 	auto in_path  = "../../test_suite/comments_in.cfg";
 	auto out_path = "../../test_suite/comments_out.cfg";
 	auto out_2_path = "../../test_suite/comments_out_2.cfg";
-	auto data = parse_config_file(in_path, configuru::CFG);
-	write_config_file(out_path, data, configuru::CFG);
+	auto data = parse_file(in_path, configuru::CFG);
+	write_file(out_path, data, configuru::CFG);
 
 	data["number"] = 42;
 	data["array"].push_back("new value");
@@ -261,13 +285,26 @@ void test_comments()
 	};
 	rearranged.erase("object");
 	rearranged.erase("array");
-	write_config_file(out_2_path, rearranged, configuru::CFG);
+	write_file(out_2_path, rearranged, configuru::CFG);
 }
 
-int main()
+int main(int argc, char* argv[])
 {
+	loguru::init(argc, argv);
+
 	run_unit_tests();
 	parse_and_print();
 	create();
 	test_comments();
+
+#define EXAMPLE_JSON {                                        \
+		{"float",       3.14f},                               \
+		{"double",      3.14},                                \
+		{"short_array", {1, 2, 3}},                           \
+		{"long_array",  {"one", {"two", "things"}, "three"}}, \
+	}
+
+	std::cout << "nlohmann: \n"       << nlohmann::json(EXAMPLE_JSON).dump(4) << std::endl;
+	std::cout << "configuru JSON: \n" << configuru::write(EXAMPLE_JSON, JSON) << std::endl;
+	std::cout << "configuru CFG: \n"  << configuru::write(EXAMPLE_JSON, CFG)  << std::endl;
 }

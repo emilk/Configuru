@@ -41,7 +41,7 @@ And in one .cpp file:
 Usage (parsing):
 ----------------
 
-	Config cfg = configuru::parse_config_file("input.json");
+	Config cfg = configuru::parse_file("input.json");
 	float alpha = (float)cfg["alpha"];
 	if (cfg.has_key("beta")) {
 		std::string beta = (std::string)cfg["beta"];
@@ -65,7 +65,7 @@ Usage (parsing):
 	// You can modify the read config:
 	cfg["message"] = "goodbye";
 
-	write_config_file("output.cfg", cfg); // Will include comments in the original.
+	write_file("output.cfg", cfg); // Will include comments in the original.
 
 Usage (writing):
 ----------------
@@ -77,7 +77,7 @@ Usage (writing):
 		{ "key1", "value1" },
 		{ "key2", "value2" },
 	};
-	write_config_file("output.cfg", cfg);
+	write_file("output.cfg", cfg);
 
 
 Config format
@@ -86,8 +86,8 @@ Config format
 Like JSON, but with simplifications. Example file:
 
 	values: [1 2 3 4 5 6]
-	object {
-		nested_key = +inf
+	object: {
+		nested_key: +inf
 	}
 	python_style: """This is a string
 	                 which spans many lines."""
@@ -95,10 +95,9 @@ Like JSON, but with simplifications. Example file:
 
 * Top-level can be key-value pairs, or a value.
 * Keys need not be quoted if identifiers.
-* = or : can be used to separate keys and values.
-* Key-value pairs need not be separated with ;
+* Key-value pairs need not be separated with ,
 * Array values need not be separated with ,
-* Trailing , allowed in arrays.
+* Trailing , allowed in arrays and objects.
 
 """ starts a verbatim multiline string
 
@@ -108,8 +107,6 @@ Numbers can be represented in any common form:
 42, 1e-32, 0xCAFE, 0b1010
 
 +inf, -inf, +NaN are valid numbers
-
-key = { }   can be written as   key { }
 
 Indentation is enforced, and must be done with tabs.
 Tabs anywhere else is not allowed.
@@ -237,14 +234,16 @@ namespace configuru
 		// ----------------------------------------
 		// Constructors:
 
-		Config()               : _type(Invalid) { }
-		Config(std::nullptr_t) : _type(Null)    { }
-		Config(double    f) : _type(Float) { _u.f = f; }
-		Config(bool      b) : _type(Bool)  { _u.b = b; }
-		Config(int       i) : _type(Int)   { _u.i = i; }
-		Config(int64_t   i) : _type(Int)   { _u.i = i; }
-		Config(long long i) : _type(Int)   { _u.i = i; }
-		Config(size_t    i) : _type(Int)
+		Config()                     : _type(Invalid) { }
+		Config(std::nullptr_t)       : _type(Null)    { }
+		Config(double f)             : _type(Float)   { _u.f = f; }
+		Config(bool   b)             : _type(Bool)    { _u.b = b; }
+		Config(int i)                : _type(Int)     { _u.i = i; }
+		Config(unsigned int i)       : _type(Int)     { _u.i = i; }
+		Config(long i)               : _type(Int)     { _u.i = i; }
+		Config(unsigned long i)      : _type(Int)     { _u.i = i; }
+		Config(long long i)          : _type(Int)     { _u.i = i; }
+		Config(unsigned long long i) : _type(Int)
 		{
 			if ((i & 0x8000000000000000ull) != 0) {
 				CONFIGURU_ONERROR("Integer too large to fit into 63 bits");
@@ -672,7 +671,7 @@ namespace configuru
 		bool        identifiers_keys         = true;  // { is_this_ok: true }
 		bool        object_separator_equal   = false; // { "is_this_ok" = true }
 		bool        allow_space_before_colon = false; // { "is_this_ok" : true }
-		bool        omit_colon_before_object = true;  // { "object" { /* nested */ } }
+		bool        omit_colon_before_object = false; // { "nested_object" { } }
 		bool        object_omit_comma        = true;  // Allow {a:1 b:2}
 		bool        object_trailing_comma    = true;  // Allow {a:1, b:2,}
 		bool        object_duplicate_keys    = false; // Allow {"a":1, "a":2}
@@ -755,16 +754,16 @@ namespace configuru
 
 	// Zero-ended Utf-8 encoded string of characters.
 	// May throw ParseError.
-	Config parse_config(const char* str, const FormatOptions& options, DocInfo _doc, ParseInfo& info);
-	Config parse_config(const char* str, const FormatOptions& options, const char* name);
-	Config parse_config_file(const std::string& path, const FormatOptions& options, DocInfo_SP doc, ParseInfo& info);
-	Config parse_config_file(const std::string& path, const FormatOptions& options);
+	Config parse(const char* str, const FormatOptions& options, DocInfo _doc, ParseInfo& info);
+	Config parse(const char* str, const FormatOptions& options, const char* name);
+	Config parse_file(const std::string& path, const FormatOptions& options, DocInfo_SP doc, ParseInfo& info);
+	Config parse_file(const std::string& path, const FormatOptions& options);
 
 	// ----------------------------------------------------------
 	// Writes in a pretty format with perfect reversibility of everything (including numbers).
-	std::string write_config(const Config& config, const FormatOptions& options);
+	std::string write(const Config& config, const FormatOptions& options);
 
-	void write_config_file(const std::string& path, const Config& config, const FormatOptions& options);
+	void write_file(const std::string& path, const Config& config, const FormatOptions& options);
 }
 
 #endif // CONFIGURU_HEADER_HPP
@@ -1199,7 +1198,7 @@ namespace configuru
 
 	std::ostream& operator<<(std::ostream& os, const Config& cfg)
 	{
-		return os << write_config(cfg, JSON);
+		return os << write(cfg, JSON);
 	}
 }
 
@@ -2222,7 +2221,7 @@ namespace configuru
 		if (it == _info.parsed_files.end()) {
 			auto child_doc = std::make_shared<DocInfo>(path);
 			child_doc->includers.emplace_back(_doc, _line_nr);
-			dst = parse_config_file(path.c_str(), _options, child_doc, _info);
+			dst = parse_file(path.c_str(), _options, child_doc, _info);
 			_info.parsed_files[path] = dst;
 		} else {
 			auto child_doc = it->second.doc();
@@ -2233,16 +2232,16 @@ namespace configuru
 
 	// ----------------------------------------------------------------------------------------
 
-	Config parse_config(const char* str, const FormatOptions& options, DocInfo_SP doc, ParseInfo& info)
+	Config parse(const char* str, const FormatOptions& options, DocInfo_SP doc, ParseInfo& info)
 	{
 		Parser p(str, options, doc, info);
 		return p.top_level();
 	}
 
-	Config parse_config(const char* str, const FormatOptions& options, const char* name)
+	Config parse(const char* str, const FormatOptions& options, const char* name)
 	{
 		ParseInfo info;
-		return parse_config(str, options, std::make_shared<DocInfo>(name), info);
+		return parse(str, options, std::make_shared<DocInfo>(name), info);
 	}
 
 	std::string read_text_file(const char* path)
@@ -2263,17 +2262,17 @@ namespace configuru
 		return contents;
 	}
 
-	Config parse_config_file(const std::string& path, const FormatOptions& options, DocInfo_SP doc, ParseInfo& info)
+	Config parse_file(const std::string& path, const FormatOptions& options, DocInfo_SP doc, ParseInfo& info)
 	{
 		// auto file = util::FILEWrapper::read_text_file(path);
 		auto file = read_text_file(path.c_str());
-		return parse_config(file.c_str(), options, doc, info);
+		return parse(file.c_str(), options, doc, info);
 	}
 
-	Config parse_config_file(const std::string& path, const FormatOptions& options)
+	Config parse_file(const std::string& path, const FormatOptions& options)
 	{
 		ParseInfo info;
-		return parse_config_file(path, options, std::make_shared<DocInfo>(path), info);
+		return parse_file(path, options, std::make_shared<DocInfo>(path), info);
 	}
 }
 
@@ -2395,7 +2394,7 @@ namespace configuru
 							  bool write_prefix, bool write_postfix)
 		{
 			if (_options.allow_macro && config.doc() && config.doc() != _doc) {
-				write_config_file(config.doc()->filename, config, _options);
+				write_file(config.doc()->filename, config, _options);
 				_ss << "#include <" << config.doc()->filename << ">";
 				return;
 			}
@@ -2667,7 +2666,7 @@ namespace configuru
 		}
 	}; // struct Writer
 
-	std::string write_config(const Config& config, const FormatOptions& options)
+	std::string write(const Config& config, const FormatOptions& options)
 	{
 		Writer w;
 		w._options = options;
@@ -2696,9 +2695,9 @@ namespace configuru
 		}
 	}
 
-	void write_config_file(const std::string& path, const configuru::Config& config, const FormatOptions& options)
+	void write_file(const std::string& path, const configuru::Config& config, const FormatOptions& options)
 	{
-		auto str = write_config(config, options);
+		auto str = write(config, options);
 		write_text_file(path.c_str(), str);
 	}
 } // namespace configuru
