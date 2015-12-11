@@ -1,3 +1,7 @@
 {
-	"some_bool": true
+	"pi":    3.14,
+	"array": [ 1, 2, 3, 4 ],
+	"obj":   {
+		"nested_value": 42
+	}
 }

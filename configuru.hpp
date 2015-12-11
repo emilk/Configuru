@@ -212,7 +212,7 @@ namespace configuru
 	class Config
 	{
 		enum Type {
-			Invalid,
+			Uninitialized,
 			BadLookupType, // We are the result of a key-lookup in a Object with no hit. We are in effect write-only.
 			Null, Bool, Int, Float, String, Array, Object
 		};
@@ -234,7 +234,7 @@ namespace configuru
 		// ----------------------------------------
 		// Constructors:
 
-		Config()                     : _type(Invalid) { }
+		Config()                     : _type(Uninitialized) { }
 		Config(std::nullptr_t)       : _type(Null)    { }
 		Config(double f)             : _type(Float)   { _u.f = f; }
 		Config(bool   b)             : _type(Bool)    { _u.b = b; }
@@ -373,14 +373,14 @@ namespace configuru
 		Config& operator[](size_t ix)
 		{
 			auto&& array = as_array();
-			check(ix < array.size(), "Out of range");
+			check(ix < array.size(), "Array index out of range");
 			return array[ix];
 		}
 
 		const Config& operator[](size_t ix) const
 		{
 			auto&& array = as_array();
-			check(ix < array.size(), "Out of range");
+			check(ix < array.size(), "Array index out of range");
 			return array[ix];
 		}
 
@@ -401,7 +401,8 @@ namespace configuru
 			return as_object().size();
 		}
 
-		ConfigObjectImpl& as_object() {
+		ConfigObjectImpl& as_object()
+		{
 			assert_type(Object);
 			return _u.object->impl;
 		}
@@ -429,7 +430,7 @@ namespace configuru
 		template<typename T>
 		T as_or(const T& default_value) const
 		{
-			if (_type == Invalid || _type == BadLookupType) {
+			if (_type == Uninitialized || _type == BadLookupType) {
 				return default_value;
 			} else {
 				return (T)*this;
@@ -501,7 +502,7 @@ namespace configuru
 	private:
 		using ConfigComments_UP = std::unique_ptr<ConfigComments>;
 
-		Type  _type = Invalid;
+		Type  _type = Uninitialized;
 
 		union {
 			bool           b;
@@ -823,7 +824,7 @@ namespace configuru
 		_u.str = new std::string(move(str));
 	}
 
-	Config::Config(std::initializer_list<Config> values) : _type(Invalid)
+	Config::Config(std::initializer_list<Config> values) : _type(Uninitialized)
 	{
 		if (values.size() == 0) {
 			CONFIGURU_ONERROR("Can't deduce object or array with empty initializer array.");
@@ -857,14 +858,14 @@ namespace configuru
 
 	void Config::make_object()
 	{
-		assert_type(Invalid);
+		assert_type(Uninitialized);
 		_type = Object;
 		_u.object = new ConfigObject();
 	}
 
 	void Config::make_array()
 	{
-		assert_type(Invalid);
+		assert_type(Uninitialized);
 		_type = Array;
 		_u.array = new ConfigArray();
 	}
@@ -912,7 +913,7 @@ namespace configuru
 
 	// ----------------------------------------
 
-	Config::Config(const Config& o) : _type(Invalid)
+	Config::Config(const Config& o) : _type(Uninitialized)
 	{
 		*this = o;
 	}
@@ -1109,15 +1110,15 @@ namespace configuru
 
 	const char* Config::debug_descr() const {
 		switch (_type) {
-			case Invalid:       return "invalid";
+			case Uninitialized: return "uninitialized";
 			case BadLookupType: return "undefined";
 			case Null:          return "null";
 			case Bool:          return _u.b ? "true" : "false";
 			case Int:           return "integer";
 			case Float:         return "float";
 			case String:        return _u.str->c_str();
-			case Array:          return "array";
-			case Object:           return "object";
+			case Array:         return "array";
+			case Object:        return "object";
 			default:            return "BROKEN Config";
 		}
 	}
@@ -1125,15 +1126,15 @@ namespace configuru
 	const char* Config::type_str(Type t)
 	{
 		switch (t) {
-			case Invalid:       return "invalid";
+			case Uninitialized: return "uninitialized";
 			case BadLookupType: return "undefined";
 			case Null:          return "null";
 			case Bool:          return "bool";
 			case Int:           return "integer";
 			case Float:         return "float";
 			case String:        return "string";
-			case Array:          return "array";
-			case Object:           return "object";
+			case Array:         return "array";
+			case Object:        return "object";
 			default:            return "BROKEN Config";
 		}
 	}
@@ -1155,7 +1156,7 @@ namespace configuru
 		} else if (_type == String) {
 			delete _u.str;
 		}
-		_type = Invalid;
+		_type = Uninitialized;
 	}
 
 	std::string where_is(const DocInfo_SP& doc, unsigned line)
@@ -1186,13 +1187,20 @@ namespace configuru
 		abort(); // We shouldn't get here.
 	}
 
-	void Config::assert_type(Type t) const
+	void Config::assert_type(Type exepected) const
 	{
 		if (_type == BadLookupType) {
 			auto where = where_is(_u.bad_lookup->doc, _u.bad_lookup->line);
 			CONFIGURU_ONERROR(where + "Failed to find key '" + _u.bad_lookup->key + "'");
-		} else if (_type != t) {
-			CONFIGURU_ONERROR(where() + "Expected " + type_str(t) + ", got " + type_str(_type));
+		} else if (_type != exepected) {
+			const auto message = where() + "Expected " + type_str(exepected) + ", got " + type_str(_type);
+			if (_type == Uninitialized && exepected == Object) {
+				CONFIGURU_ONERROR(message + ". Did you forget to call Config::object()?");
+			} else if (_type == Uninitialized && exepected == Array) {
+				CONFIGURU_ONERROR(message + ". Did you forget to call Config::array()?");
+			} else {
+				CONFIGURU_ONERROR(message);
+			}
 		}
 	}
 

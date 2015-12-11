@@ -103,16 +103,37 @@ void test_special(size_t& num_run, size_t& num_failed)
 void test_bad_usage(size_t& num_run, size_t& num_failed)
 {
 	auto config = configuru::parse_file("../../test_suite/special/config.json", configuru::JSON);
-	test_code("access_bool_as_bool", true, num_run, num_failed, [&]{
-		auto b = (bool)config["some_bool"];
+	test_code("access_float_as_float", true, num_run, num_failed, [&]{
+		auto b = (float)config["pi"];
 		(void)b;
 	});
-	test_code("access_bool_as_float", false, num_run, num_failed, [&]{
-		auto f = (float)config["some_bool"];
+	test_code("access_float_bool", false, num_run, num_failed, [&]{
+		auto f = (bool)config["pi"];
 		(void)f;
 	});
 	test_code("key_not_found", false, num_run, num_failed, [&]{
-		std::cout << (float)config["does_not_exist"];
+		std::cout << (float)config["obj"]["does_not_exist"];
+	});
+	test_code("indexing_non_array", false, num_run, num_failed, [&]{
+		std::cout << (float)config["pi"][5];
+	});
+	test_code("out_of_bounds", false, num_run, num_failed, [&]{
+		std::cout << (float)config["array"][5];
+	});
+
+	test_code("assign_to_non_object", false, num_run, num_failed, []{
+		Config cfg;
+		cfg["hello"] = 42;
+	});
+
+	test_code("read_from_non_object", false, num_run, num_failed, []{
+		const Config cfg;
+		std::cout << cfg["hello"];
+	});
+
+	test_code("assign_to_non_array", false, num_run, num_failed, []{
+		Config cfg;
+		cfg.push_back("hello");
 	});
 }
 
@@ -292,7 +313,6 @@ int main(int argc, char* argv[])
 {
 	loguru::init(argc, argv);
 
-	run_unit_tests();
 	parse_and_print();
 	create();
 	test_comments();
@@ -307,4 +327,6 @@ int main(int argc, char* argv[])
 	std::cout << "nlohmann: \n"       << nlohmann::json(EXAMPLE_JSON).dump(4) << std::endl;
 	std::cout << "configuru JSON: \n" << configuru::write(EXAMPLE_JSON, JSON) << std::endl;
 	std::cout << "configuru CFG: \n"  << configuru::write(EXAMPLE_JSON, CFG)  << std::endl;
+
+	run_unit_tests();
 }

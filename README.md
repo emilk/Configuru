@@ -27,7 +27,9 @@ This config library is unique in a few ways:
 
 Error messages
 --------------
-Configuru prides itself on great error messages both for parse errors and for value errors (expecting one thing and getting another). Example parse errors:
+Configuru prides itself on great error messages both for parse errors and for value errors (expecting one thing and getting another).
+
+### Parse errors
 
 	equal_in_map.cfg:1:16: Expected : after object key
 	{ "is_this_ok" = true }
@@ -53,12 +55,46 @@ Configuru prides itself on great error messages both for parse errors and for va
 	+42
 	^
 
-Similarily, using a parsed Config value in the wrong way produces nice error messages:
+Note how all errors mention follow the standard `filename:line:column` structure (most errors above happen on line `1` since they are from small unit tests).
 
-Accessing a bool beleiving it to be a float: `config.json:2: Expected float, got bool`. Note that the line of the file where they value is defined is mentioned.
+### Value errors
+Similarily, using a parsed Config value in the wrong way produces nice error messages. Take the following file (`config.json`):
 
-Accessing a key which has not been set: `config.json:1: Failed to find key 'does_not_exist'`. Again, the line where the object is defined at is mentioned.
+	{
+		"pi":    3.14,
+		"array": [ 1, 2, 3, 4 ],
+		"obj":   {
+			"nested_value": 42
+		}
+	}
 
+Here's some use errors and their error messages:
+
+	auto b = (bool)config["pi"];
+
+*config.json:2: Expected bool, got float*. Note that the file:line points to where the value is defined.
+
+	std::cout << (float)config["obj"]["does_not_exist"];
+
+*config.json:4: Failed to find key 'does_not_exist'*. Here the file and line of the owner (`"obj"`) of the missing value is referenced.
+
+	std::cout << (float)config["pi"][5];
+
+*config.json:2: Expected array, got float*.
+
+	std::cout << (float)config["array"][5];
+
+*config.json:3: Array index out of range*
+
+	Config cfg;
+	cfg["hello"] = 42;
+
+*Expected object, got uninitialized. Did you forget to call Config::object()?*
+
+	Config cfg;
+	cfg.push_back("hello");
+
+*Expected array, got uninitialized. Did you forget to call Config::array()?*
 
 Usage (general):
 ----------------
