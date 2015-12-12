@@ -57,7 +57,7 @@ Usage (parsing):
 
 	for (auto& p : cfg["object"].as_object()) {
 		std::cout << "Key: "   << p.first << std::endl;
-		std::cout << "Value: " << p.second;
+		std::cout << "Value: " << p.second.value;
 	}
 
 	cfg.check_dangling(); // Make sure we haven't forgot reading a key!
@@ -211,13 +211,13 @@ namespace configuru
 	*/
 	class Config
 	{
+	public:
 		enum Type {
 			Uninitialized,
 			BadLookupType, // We are the result of a key-lookup in a Object with no hit. We are in effect write-only.
 			Null, Bool, Int, Float, String, Array, Object
 		};
 
-	public:
 		using ObjectEntry = Config_Entry<Config>;
 
 		using ConfigArrayImpl = std::vector<Config>;
@@ -287,6 +287,8 @@ namespace configuru
 
 		// ----------------------------------------
 		// Inspectors:
+
+		Type type() const { return _type; }
 
 		bool is_null()   const { return _type    == Null;       }
 		bool is_bool()   const { return _type    == Bool;       }
@@ -681,6 +683,7 @@ namespace configuru
 		bool        str_csharp_verbatim      = true;  // Allow @"Verbatim\strings"
 		bool        str_python_multiline     = true;  // Allow """ Python\nverbatim strings """
 		bool        str_32bit_unicode        = true;  // Allow "\U0030dbfd"
+		bool        str_allow_tab            = true;  // Allow unescaped tab in string.
 
 		// Special
 		bool        allow_macro              = true;  // Allow #include "some_other_file.cfg"
@@ -735,6 +738,7 @@ namespace configuru
 		options.str_csharp_verbatim      = false;
 		options.str_python_multiline     = false;
 		options.str_32bit_unicode        = false;
+		options.str_allow_tab            = false;
 
 		// Special
 		options.allow_macro              = false;
@@ -755,8 +759,8 @@ namespace configuru
 
 	// Zero-ended Utf-8 encoded string of characters.
 	// May throw ParseError.
-	Config parse(const char* str, const FormatOptions& options, DocInfo _doc, ParseInfo& info);
-	Config parse(const char* str, const FormatOptions& options, const char* name);
+	Config parse_string(const char* str, const FormatOptions& options, DocInfo _doc, ParseInfo& info);
+	Config parse_string(const char* str, const FormatOptions& options, const char* name);
 	Config parse_file(const std::string& path, const FormatOptions& options, DocInfo_SP doc, ParseInfo& info);
 	Config parse_file(const std::string& path, const FormatOptions& options);
 
@@ -2013,14 +2017,16 @@ namespace configuru
 		}
 		if (*p == '.' || *p == 'e' || *p == 'E') {
 			// Floating point
-			auto start = _ptr;
+			const auto start = _ptr;
 			dst = sign * strtod(start, (char**)&_ptr);
 			parse_assert(start < _ptr, "Invalid float");
 		} else {
 			// Integer:
-			auto start = _ptr;
-			dst = sign * strtoll(start, (char**)&_ptr, 10);
+			const auto start = _ptr;
+			const auto unsigned_number = strtoll(start, (char**)&_ptr, 10);
+			dst = sign * unsigned_number;
 			parse_assert(start < _ptr, "Invalid integer");
+			parse_assert(start[0] != '0' || unsigned_number == 0, "Integer may not start with a zero");
 		}
 	}
 
@@ -2103,6 +2109,9 @@ namespace configuru
 				}
 				if (_ptr[0] == '\n') {
 					throw_error("Newline in string");
+				}
+				if (_ptr[0] == '\t') {
+					parse_assert(_options.str_allow_tab, "Un-escaped tab not allowed in string");
 				}
 
 				if (_ptr[0] == '\\') {
@@ -2240,16 +2249,16 @@ namespace configuru
 
 	// ----------------------------------------------------------------------------------------
 
-	Config parse(const char* str, const FormatOptions& options, DocInfo_SP doc, ParseInfo& info)
+	Config parse_string(const char* str, const FormatOptions& options, DocInfo_SP doc, ParseInfo& info)
 	{
 		Parser p(str, options, doc, info);
 		return p.top_level();
 	}
 
-	Config parse(const char* str, const FormatOptions& options, const char* name)
+	Config parse_string(const char* str, const FormatOptions& options, const char* name)
 	{
 		ParseInfo info;
-		return parse(str, options, std::make_shared<DocInfo>(name), info);
+		return parse_string(str, options, std::make_shared<DocInfo>(name), info);
 	}
 
 	std::string read_text_file(const char* path)
@@ -2274,7 +2283,7 @@ namespace configuru
 	{
 		// auto file = util::FILEWrapper::read_text_file(path);
 		auto file = read_text_file(path.c_str());
-		return parse(file.c_str(), options, doc, info);
+		return parse_string(file.c_str(), options, doc, info);
 	}
 
 	Config parse_file(const std::string& path, const FormatOptions& options)

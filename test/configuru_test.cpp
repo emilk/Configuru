@@ -68,7 +68,7 @@ template<typename T>
 void test_roundtrip(FormatOptions options, T value, size_t& num_run, size_t& num_failed)
 {
 	std::string serialized = configuru::write(Config(value), options);
-	Config parsed_config = configuru::parse(serialized.c_str(), options, "roundtrip");
+	Config parsed_config = configuru::parse_string(serialized.c_str(), options, "roundtrip");
 	T parsed_value = (T)parsed_config;
 	if (value == parsed_value) {
 		std::cout << loguru::terminal_green() << "PASS: " << loguru::terminal_reset() << serialized << std::endl;
@@ -184,7 +184,7 @@ obj:   {
 
 void parse_and_print()
 {
-	auto cfg = configuru::parse(TEST_CFG, FormatOptions(), "test_cfg");
+	auto cfg = configuru::parse_string(TEST_CFG, FormatOptions(), "test_cfg");
 	std::cout << "pi: " << cfg["pi"] << std::endl;
 	cfg.check_dangling();
 
