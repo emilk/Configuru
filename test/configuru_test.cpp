@@ -17,6 +17,33 @@ namespace fs = boost::filesystem;
 const std::string PASS_STRING = (std::string)loguru::terminal_green() + "PASS: " + loguru::terminal_reset();
 const std::string FAIL_STRING = (std::string)loguru::terminal_red()   + "FAIL: " + loguru::terminal_reset();
 
+struct Tester
+{
+	size_t num_run    = 0;
+	size_t num_failed = 0;
+
+	void print_pass(const std::string& test_name)
+	{
+		// std::cout << PASS_STRING << test_name << std::endl;
+		(void)test_name;
+		num_run += 1;
+	}
+
+	void print_pass(const std::string& test_name, const std::string& extra)
+	{
+		// std::cout << PASS_STRING << test_name << ": " << extra << std::endl << std::endl;
+		(void)test_name; (void)extra;
+		num_run += 1;
+	}
+
+	void print_fail(const std::string& test_name, const std::string& extra)
+	{
+		std::cout << FAIL_STRING << test_name << ": " << extra << std::endl << std::endl;
+		num_run += 1;
+		num_failed += 1;
+	}
+};
+
 std::vector<fs::path> list_files(fs::path directory, std::string extension)
 {
     std::vector<fs::path> result;
@@ -31,92 +58,115 @@ std::vector<fs::path> list_files(fs::path directory, std::string extension)
     return result;
 }
 
-void test_code(std::string test_name, bool should_pass, size_t& num_run, size_t& num_failed, std::function<void()> code)
+void test_code(Tester& tester, std::string test_name, bool should_pass, std::function<void()> code)
 {
 	try {
 		code();
 
 		if (should_pass) {
-			std::cout << PASS_STRING << test_name << std::endl;
+			tester.print_pass(test_name);
 		} else {
-			std::cout <<loguru::terminal_red() <<  "SHOULD NOT HAVE PARSED: " << loguru::terminal_reset() << test_name << std::endl;
-			num_failed += 1;
+			tester.print_fail(test_name, "Should not have parsed");
 		}
 	} catch (std::exception& e) {
 		if (should_pass) {
-			std::cout << FAIL_STRING << test_name << ": " << e.what() << std::endl << std::endl;
-			num_failed += 1;
+			tester.print_fail(test_name, e.what());
 		} else {
-			std::cout << PASS_STRING << test_name << ": " << e.what() << std::endl << std::endl;
+			tester.print_pass(test_name, e.what());
 		}
 	}
-	num_run += 1;
 }
 
-void test_parse(FormatOptions options, bool should_pass, fs::path path, size_t& num_run, size_t& num_failed)
+void test_parse(Tester& tester, FormatOptions options, bool should_pass, fs::path path)
 {
-	test_code(path.filename().string(), should_pass, num_run, num_failed, [&](){
+	test_code(tester, path.filename().string(), should_pass, [&](){
 		configuru::parse_file(path.string(), options);
 	});
 }
 
-void test_all_in(FormatOptions options, bool should_pass, fs::path dir, std::string extension, size_t& num_run, size_t& num_failed)
+void test_all_in(Tester& tester, FormatOptions options, bool should_pass, fs::path dir, std::string extension)
 {
 	for (auto path : list_files(dir, extension)) {
-		test_parse(options, should_pass, path.string(), num_run, num_failed);
+		test_parse(tester, options, should_pass, path.string());
 	}
 }
 
 template<typename T>
-void test_roundtrip(FormatOptions options, T value, size_t& num_run, size_t& num_failed)
+void test_roundtrip(Tester& tester, FormatOptions options, T value)
 {
 	std::string serialized = configuru::write(Config(value), options);
 	Config parsed_config = configuru::parse_string(serialized.c_str(), options, "roundtrip");
 	T parsed_value = (T)parsed_config;
 	if (value == parsed_value) {
-		std::cout << PASS_STRING << serialized << std::endl;
+		tester.print_pass(serialized);
 	} else {
-		num_failed += 1;
-		std::cout << FAIL_STRING << "failed round-trip: " << serialized << std::endl;
+		tester.print_fail("round-trip", serialized);
 	}
-	num_run += 1;
 }
 
-void test_special(size_t& num_run, size_t& num_failed)
+void test_special(Tester& tester)
 {
 	auto format = configuru::JSON;
 	format.enforce_indentation = true;
 	format.indentation = "\t";
-	test_parse(format, false, "../../test_suite/special/two_spaces_indentation.json", num_run, num_failed);
+	test_parse(tester, format, false, "../../test_suite/special/two_spaces_indentation.json");
 
 	format.indentation = "    ";
-	test_parse(format, false, "../../test_suite/special/two_spaces_indentation.json", num_run, num_failed);
+	test_parse(tester, format, false, "../../test_suite/special/two_spaces_indentation.json");
 
 	format.indentation = "  ";
-	test_parse(format, true, "../../test_suite/special/two_spaces_indentation.json", num_run, num_failed);
+	test_parse(tester, format, true, "../../test_suite/special/two_spaces_indentation.json");
 
-	test_roundtrip(JSON, 0.1,   num_run, num_failed);
-	test_roundtrip(JSON, 0.1f,  num_run, num_failed);
-	test_roundtrip(JSON, 3.14,  num_run, num_failed);
-	test_roundtrip(JSON, 3.14f, num_run, num_failed);
-	test_roundtrip(JSON, 3.14000010490417, num_run, num_failed);
-	test_roundtrip(JSON, 1234567890123456ll, num_run, num_failed);
+	test_roundtrip(tester, JSON, 0.1);
+	test_roundtrip(tester, JSON, 0.1f);
+	test_roundtrip(tester, JSON, 3.14);
+	test_roundtrip(tester, JSON, 3.14f);
+	test_roundtrip(tester, JSON, 3.14000010490417);
+	test_roundtrip(tester, JSON, 1234567890123456ll);
 }
 
-void test_strings(size_t& num_run, size_t& num_failed)
+void test_roundtrip_string(Tester& tester)
+{
+	auto test_roundtrip = [&](const std::string& json)
+	{
+		Config cfg = configuru::parse_string(json.c_str(), JSON, "roundtrip");
+		std::string serialized = configuru::write(cfg, JSON);
+		if (serialized[serialized.size() - 1] == '\n') {
+			serialized.resize(serialized.size() - 1);
+		}
+		if (json == serialized) {
+			tester.print_pass(json);
+		} else {
+			tester.print_fail("round-trip", "Expected: '" + json + "', got: '" + serialized + "'");
+		}
+	};
+
+	test_roundtrip("-9223372036854775808");
+	test_roundtrip("9223372036854775807");
+	test_roundtrip("0.0");
+	test_roundtrip("-0.0");
+	test_roundtrip("1.0");
+	test_roundtrip("-1.0");
+	test_roundtrip("5e-324");
+	test_roundtrip("2.225073858507201e-308");
+	test_roundtrip("2.2250738585072014e-308");
+	test_roundtrip("1.7976931348623157e+308");
+	test_roundtrip("3.14");
+}
+
+void test_strings(Tester& tester)
 {
 	auto test_string = [&](const std::string& json, const std::string& expected)
 	{
 		std::string output = (std::string)configuru::parse_string(json.c_str(), configuru::JSON, "string");
 		if (output == expected) {
-			std::cout << PASS_STRING << expected << std::endl;
+			tester.print_pass(expected);
 		} else {
-			std::cout << FAIL_STRING << json << ": " << output << " != " << expected << std::endl;
-			num_failed += 1;
+			tester.print_fail(json, "Got: '" + output + ", expected: '" + expected + "'");
 		}
-		num_run += 1;
 	};
 
+	// Tests from https://github.com/miloyip/nativejson-benchmark
     test_string("\"\"",                         "");
     test_string("\"Hello\"",                    "Hello");
     test_string("\"Hello\\nWorld\"",            "Hello\nWorld");
@@ -128,38 +178,160 @@ void test_strings(size_t& num_run, size_t& num_failed)
     test_string("\"\\uD834\\uDD1E\"",           "\xF0\x9D\x84\x9E"); // G clef sign U+1D11E
 }
 
-void test_bad_usage(size_t& num_run, size_t& num_failed)
+void test_doubles(Tester& tester)
+{
+	auto test_double = [&](const std::string& json, const double expected)
+	{
+		double output = (double)configuru::parse_string(json.c_str(), configuru::JSON, "string");
+		if (output == expected) {
+			tester.print_pass(json);
+		} else {
+			tester.print_fail(json, std::to_string(output) + " != " + std::to_string(expected));
+		}
+	};
+
+	// Tests from https://github.com/miloyip/nativejson-benchmark
+    test_double("0.0", 0.0);
+    test_double("-0.0", -0.0);
+    test_double("1.0", 1.0);
+    test_double("-1.0", -1.0);
+    test_double("1.5", 1.5);
+    test_double("-1.5", -1.5);
+    test_double("3.1416", 3.1416);
+    test_double("1E10", 1E10);
+    test_double("1e10", 1e10);
+    test_double("1E+10", 1E+10);
+    test_double("1E-10", 1E-10);
+    test_double("-1E10", -1E10);
+    test_double("-1e10", -1e10);
+    test_double("-1E+10", -1E+10);
+    test_double("-1E-10", -1E-10);
+    test_double("1.234E+10", 1.234E+10);
+    test_double("1.234E-10", 1.234E-10);
+    test_double("1.79769e+308", 1.79769e+308);
+    test_double("2.22507e-308", 2.22507e-308);
+    test_double("-1.79769e+308", -1.79769e+308);
+    test_double("-2.22507e-308", -2.22507e-308);
+    test_double("4.9406564584124654e-324", 4.9406564584124654e-324); // minimum denormal
+    test_double("2.2250738585072009e-308", 2.2250738585072009e-308); // Max subnormal double
+    test_double("2.2250738585072014e-308", 2.2250738585072014e-308); // Min normal positive double
+    test_double("1.7976931348623157e+308", 1.7976931348623157e+308); // Max double
+    test_double("1e-10000", 0.0);                                   // must underflow
+    test_double("18446744073709551616", 18446744073709551616.0);    // 2^64 (max of uint64_t + 1, force to use double)
+    test_double("-9223372036854775809", -9223372036854775809.0);    // -2^63 - 1(min of int64_t + 1, force to use double)
+    test_double("0.9868011474609375", 0.9868011474609375);          // https://github.com/miloyip/rapidjson/issues/120
+    test_double("123e34", 123e34);                                  // Fast Path Cases In Disguise
+    test_double("45913141877270640000.0", 45913141877270640000.0);
+    test_double("2.2250738585072011e-308", 2.2250738585072011e-308); // http://www.exploringbinary.com/php-hangs-on-numeric-value-2-2250738585072011e-308/
+    //test_double("1e-00011111111111", 0.0);
+    //test_double("-1e-00011111111111", -0.0);
+    test_double("1e-214748363", 0.0);
+    test_double("1e-214748364", 0.0);
+    //test_double("1e-21474836311", 0.0);
+    test_double("0.017976931348623157e+310", 1.7976931348623157e+308); // Max double in another form
+
+    // Since
+    // abs((2^-1022 - 2^-1074) - 2.2250738585072012e-308) = 3.109754131239141401123495768877590405345064751974375599... ¡Á 10^-324
+    // abs((2^-1022) - 2.2250738585072012e-308) = 1.830902327173324040642192159804623318305533274168872044... ¡Á 10 ^ -324
+    // So 2.2250738585072012e-308 should round to 2^-1022 = 2.2250738585072014e-308
+    test_double("2.2250738585072012e-308", 2.2250738585072014e-308); // http://www.exploringbinary.com/java-hangs-when-converting-2-2250738585072012e-308/
+
+    // More closer to normal/subnormal boundary
+    // boundary = 2^-1022 - 2^-1075 = 2.225073858507201136057409796709131975934819546351645648... ¡Á 10^-308
+    test_double("2.22507385850720113605740979670913197593481954635164564e-308", 2.2250738585072009e-308);
+    test_double("2.22507385850720113605740979670913197593481954635164565e-308", 2.2250738585072014e-308);
+
+    // 1.0 is in (1.0 - 2^-54, 1.0 + 2^-53)
+    // 1.0 - 2^-54 = 0.999999999999999944488848768742172978818416595458984375
+    test_double("0.999999999999999944488848768742172978818416595458984375", 1.0); // round to even
+    test_double("0.999999999999999944488848768742172978818416595458984374", 0.99999999999999989); // previous double
+    test_double("0.999999999999999944488848768742172978818416595458984376", 1.0); // next double
+    // 1.0 + 2^-53 = 1.00000000000000011102230246251565404236316680908203125
+    test_double("1.00000000000000011102230246251565404236316680908203125", 1.0); // round to even
+    test_double("1.00000000000000011102230246251565404236316680908203124", 1.0); // previous double
+    test_double("1.00000000000000011102230246251565404236316680908203126", 1.00000000000000022); // next double
+
+    // Numbers from https://github.com/floitsch/double-conversion/blob/master/test/cctest/test-strtod.cc
+
+    test_double("72057594037927928.0", 72057594037927928.0);
+    test_double("72057594037927936.0", 72057594037927936.0);
+    test_double("72057594037927932.0", 72057594037927936.0);
+    test_double("7205759403792793199999e-5", 72057594037927928.0);
+    test_double("7205759403792793200001e-5", 72057594037927936.0);
+
+    test_double("9223372036854774784.0", 9223372036854774784.0);
+    test_double("9223372036854775808.0", 9223372036854775808.0);
+    test_double("9223372036854775296.0", 9223372036854775808.0);
+    test_double("922337203685477529599999e-5", 9223372036854774784.0);
+    test_double("922337203685477529600001e-5", 9223372036854775808.0);
+
+    test_double("10141204801825834086073718800384", 10141204801825834086073718800384.0);
+    test_double("10141204801825835211973625643008", 10141204801825835211973625643008.0);
+    test_double("10141204801825834649023672221696", 10141204801825835211973625643008.0);
+    test_double("1014120480182583464902367222169599999e-5", 10141204801825834086073718800384.0);
+    test_double("1014120480182583464902367222169600001e-5", 10141204801825835211973625643008.0);
+
+    test_double("5708990770823838890407843763683279797179383808", 5708990770823838890407843763683279797179383808.0);
+    test_double("5708990770823839524233143877797980545530986496", 5708990770823839524233143877797980545530986496.0);
+    test_double("5708990770823839207320493820740630171355185152", 5708990770823839524233143877797980545530986496.0);
+    test_double("5708990770823839207320493820740630171355185151999e-3", 5708990770823838890407843763683279797179383808.0);
+    test_double("5708990770823839207320493820740630171355185152001e-3", 5708990770823839524233143877797980545530986496.0);
+
+    {
+        char n1e308[310];   // '1' followed by 308 '0'
+        n1e308[0] = '1';
+        for (int j = 1; j < 309; j++)
+            n1e308[j] = '0';
+        n1e308[309] = '\0';
+        test_double(n1e308, 1E308);
+    }
+
+    // Cover trimming
+    test_double(
+        "2.22507385850720113605740979670913197593481954635164564802342610972482222202107694551652952390813508"
+        "7914149158913039621106870086438694594645527657207407820621743379988141063267329253552286881372149012"
+        "9811224514518898490572223072852551331557550159143974763979834118019993239625482890171070818506906306"
+        "6665599493827577257201576306269066333264756530000924588831643303777979186961204949739037782970490505"
+        "1080609940730262937128958950003583799967207254304360284078895771796150945516748243471030702609144621"
+        "5722898802581825451803257070188608721131280795122334262883686223215037756666225039825343359745688844"
+        "2390026549819838548794829220689472168983109969836584681402285424333066033985088644580400103493397042"
+        "7567186443383770486037861622771738545623065874679014086723327636718751234567890123456789012345678901"
+        "e-308",
+        2.2250738585072014e-308);
+}
+
+void test_bad_usage(Tester& tester)
 {
 	auto config = configuru::parse_file("../../test_suite/special/config.json", configuru::JSON);
-	test_code("access_float_as_float", true, num_run, num_failed, [&]{
+	test_code(tester, "access_float_as_float", true, [&]{
 		auto b = (float)config["pi"];
 		(void)b;
 	});
-	test_code("access_float_bool", false, num_run, num_failed, [&]{
+	test_code(tester, "access_float_bool", false, [&]{
 		auto f = (bool)config["pi"];
 		(void)f;
 	});
-	test_code("key_not_found", false, num_run, num_failed, [&]{
+	test_code(tester, "key_not_found", false, [&]{
 		std::cout << (float)config["obj"]["does_not_exist"];
 	});
-	test_code("indexing_non_array", false, num_run, num_failed, [&]{
+	test_code(tester, "indexing_non_array", false, [&]{
 		std::cout << (float)config["pi"][5];
 	});
-	test_code("out_of_bounds", false, num_run, num_failed, [&]{
+	test_code(tester, "out_of_bounds", false, [&]{
 		std::cout << (float)config["array"][5];
 	});
 
-	test_code("assign_to_non_object", false, num_run, num_failed, []{
+	test_code(tester, "assign_to_non_object", false, []{
 		Config cfg;
 		cfg["hello"] = 42;
 	});
 
-	test_code("read_from_non_object", false, num_run, num_failed, []{
+	test_code(tester, "read_from_non_object", false, []{
 		const Config cfg;
 		std::cout << cfg["hello"];
 	});
 
-	test_code("assign_to_non_array", false, num_run, num_failed, []{
+	test_code(tester, "assign_to_non_array", false, []{
 		Config cfg;
 		cfg.push_back("hello");
 	});
@@ -167,35 +339,36 @@ void test_bad_usage(size_t& num_run, size_t& num_failed)
 
 void run_unit_tests()
 {
-	size_t num_run = 0;
-	size_t num_failed = 0;
+	Tester tester;
 	std::cout << "JSON expected to pass:" << std::endl;
-	test_all_in(configuru::JSON, true, "../../test_suite/json_pass",      ".json", num_run, num_failed);
-	test_all_in(configuru::JSON, true, "../../test_suite/json_only_pass", ".json", num_run, num_failed);
+	test_all_in(tester, configuru::JSON, true, "../../test_suite/json_pass",      ".json");
+	test_all_in(tester, configuru::JSON, true, "../../test_suite/json_only_pass", ".json");
 
 	std::cout << std::endl << "JSON expected to fail:" << std::endl;
-	test_all_in(configuru::JSON, false, "../../test_suite/json_fail", ".json", num_run, num_failed);
-	test_all_in(configuru::JSON, false, "../../test_suite/cfg_pass",  ".cfg", num_run, num_failed);
-	test_all_in(configuru::JSON, false, "../../test_suite/cfg_fail",  ".cfg", num_run, num_failed);
+	test_all_in(tester, configuru::JSON, false, "../../test_suite/json_fail", ".json");
+	test_all_in(tester, configuru::JSON, false, "../../test_suite/cfg_pass",  ".cfg");
+	test_all_in(tester, configuru::JSON, false, "../../test_suite/cfg_fail",  ".cfg");
 
 	std::cout << std::endl << "CFG expected to pass:" << std::endl;
-	test_all_in(configuru::CFG, true,  "../../test_suite/json_pass", ".json", num_run, num_failed);
-	test_all_in(configuru::CFG, true,  "../../test_suite/cfg_pass",  ".cfg", num_run, num_failed);
+	test_all_in(tester, configuru::CFG, true,  "../../test_suite/json_pass", ".json");
+	test_all_in(tester, configuru::CFG, true,  "../../test_suite/cfg_pass",  ".cfg");
 
 	std::cout << std::endl << "CFG expected to fail:" << std::endl;
-	test_all_in(configuru::CFG, false, "../../test_suite/json_only_pass", ".json", num_run, num_failed);
-	test_all_in(configuru::CFG, false, "../../test_suite/json_fail",      ".json", num_run, num_failed);
-	test_all_in(configuru::CFG, false, "../../test_suite/cfg_fail",       ".cfg", num_run, num_failed);
+	test_all_in(tester, configuru::CFG, false, "../../test_suite/json_only_pass", ".json");
+	test_all_in(tester, configuru::CFG, false, "../../test_suite/json_fail",      ".json");
+	test_all_in(tester, configuru::CFG, false, "../../test_suite/cfg_fail",       ".cfg");
 	std::cout << std::endl << std::endl;
 
-	test_special(num_run, num_failed);
-	test_bad_usage(num_run, num_failed);
-	test_strings(num_run, num_failed);
+	test_special(tester);
+	test_bad_usage(tester);
+	test_strings(tester);
+	test_doubles(tester);
+	test_roundtrip_string(tester);
 
-	if (num_failed == 0) {
-		printf("%s%lu/%lu tests passed!%s\n", loguru::terminal_green(), num_run, num_run, loguru::terminal_reset());
+	if (tester.num_failed == 0) {
+		printf("%s%lu/%lu tests passed!%s\n", loguru::terminal_green(), tester.num_run, tester.num_run, loguru::terminal_reset());
 	} else {
-		printf("%s%lu/%lu tests failed.%s\n", loguru::terminal_red(), num_failed, num_run, loguru::terminal_reset());
+		printf("%s%lu/%lu tests failed.%s\n", loguru::terminal_red(), tester.num_failed, tester.num_run, loguru::terminal_reset());
 	}
 	printf("\n\n");
 	fflush(stdout);

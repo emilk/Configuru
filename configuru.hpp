@@ -1353,6 +1353,8 @@ namespace configuru
 		void parse_array_contents(Config& dst);
 		void parse_object(Config& dst);
 		void parse_object_contents(Config& dst);
+		void parse_int(Config& out);
+		void parse_float(Config& out);
 		void parse_finite_number(Config& dst);
 		std::string parse_string();
 		uint64_t parse_hex(int count);
@@ -1974,8 +1976,26 @@ namespace configuru
 		}
 	}
 
+	void Parser::parse_int(Config& out)
+	{
+		const auto start = _ptr;
+		const auto result = strtoll(start, (char**)&_ptr, 10);
+		parse_assert(start < _ptr, "Invalid integer");
+		parse_assert(start[0] != '0' || result == 0, "Integer may not start with a zero");
+		out = result;
+	}
+
+	void Parser::parse_float(Config& out)
+	{
+		const auto start = _ptr;
+		const double result = strtod(start, (char**)&_ptr);
+		parse_assert(start < _ptr, "Invalid number");
+		out = result;
+	}
+
 	void Parser::parse_finite_number(Config& out)
 	{
+		const auto pre_sign = _ptr;
 		int sign = +1;
 
 		if (_ptr[0] == '+') {
@@ -2016,22 +2036,40 @@ namespace configuru
 			p += 1;
 		}
 
-		const auto start = _ptr;
-		const double unsigned_double = strtod(start, (char**)&_ptr);
-		parse_assert(start < _ptr, "Invalid number");
-
-		const double TWO_TO_63 = 9223372036854775808.0;
-
-		if (*p == '.' || *p == 'e' || *p == 'E' || unsigned_double >= TWO_TO_63) {
-			out = sign * unsigned_double;
-		} else {
-			// Integer:
-			_ptr = start; // Roll back
-			const auto unsigned_number = strtoll(start, (char**)&_ptr, 10);
-			parse_assert(start < _ptr, "Invalid integer");
-			parse_assert(start[0] != '0' || unsigned_number == 0, "Integer may not start with a zero");
-			out = sign * unsigned_number;
+		if (*p == '.' || *p == 'e' || *p == 'E') {
+			_ptr = pre_sign;
+			return parse_float(out);
 		}
+
+		// It looks like an integer - but it may be too long to represent as one!
+		const auto MAX_INT_STR = (sign == +1 ? "9223372036854775807" : "9223372036854775808");
+
+		const size_t length = p - _ptr;
+
+		if (length < 19) {
+			_ptr = pre_sign;
+			return parse_int(out);
+		}
+
+		if (length > 19) {
+			_ptr = pre_sign;
+			return parse_float(out); // Uncommon case optimization
+		}
+
+		// Compare fast:
+		for (int i = 0; i < 19; ++i)
+		{
+			if (_ptr[i] > MAX_INT_STR[i]) {
+				_ptr = pre_sign;
+				return parse_float(out);
+			}
+			if (_ptr[i] < MAX_INT_STR[i]) {
+				_ptr = pre_sign;
+				return parse_int(out);
+			}
+		}
+		_ptr = pre_sign;
+		return parse_int(out); // Exactly max int
 	}
 
 	std::string Parser::parse_string()
@@ -2385,9 +2423,16 @@ namespace configuru
 
 	struct Writer
 	{
+		using ObjIterator = Config::ConfigObjectImpl::const_iterator;
+
 		DocInfo_SP        _doc;
 		FormatOptions     _options;
 		std::stringstream _ss;
+
+		// Reuse memory:
+		std::stringstream        _temp_ss;
+		std::string              _temp_string;
+		std::vector<ObjIterator> _temp_pairs;
 
 		void write_indent(unsigned indent)
 		{
@@ -2520,32 +2565,25 @@ namespace configuru
 		{
 			// Write in same order as input:
 			auto&& object = config.as_object();
-			using Iterator = Config::ConfigObjectImpl::const_iterator;
-			std::vector<Iterator> pairs;
+			_temp_pairs.clear();
 			size_t longest_key = 0;
 			for (auto it=object.begin(); it!=object.end(); ++it) {
-				pairs.push_back(it);
-				#if 1
-					longest_key = std::max(longest_key, it->first.size());
-				#else
-					if (!it->second.value.is_object()) {
-						longest_key = std::max(longest_key, it->first.size());
-					}
-				#endif
+				_temp_pairs.push_back(it);
+				longest_key = std::max(longest_key, it->first.size());
 			}
 
 			if (_options.sort_keys) {
-				std::sort(begin(pairs), end(pairs), [](const Iterator& a, const Iterator& b) {
+				std::sort(begin(_temp_pairs), end(_temp_pairs), [](const ObjIterator& a, const ObjIterator& b) {
 					return a->first < b->first;
 				});
 			} else {
-				std::sort(begin(pairs), end(pairs), [](const Iterator& a, const Iterator& b) {
+				std::sort(begin(_temp_pairs), end(_temp_pairs), [](const ObjIterator& a, const ObjIterator& b) {
 					return a->second.nr < b->second.nr;
 				});
 			}
 
 			size_t i = 0;
-			for (auto&& it : pairs) {
+			for (auto&& it : _temp_pairs) {
 				auto&& value = it->second.value;
 				write_prefix_comments(indent, value.comments().prefix);
 				write_indent(indent);
@@ -2562,10 +2600,10 @@ namespace configuru
 				}
 				write_value(indent, value, false, true);
 				if (_options.compact()) {
-					if (i + 1 < pairs.size()) {
+					if (i + 1 < _temp_pairs.size()) {
 						_ss << ",";
 					}
-				} else if (_options.array_omit_comma || i + 1 == pairs.size()) {
+				} else if (_options.array_omit_comma || i + 1 == _temp_pairs.size()) {
 					_ss << "\n";
 				} else {
 					_ss << ",\n";
@@ -2587,38 +2625,54 @@ namespace configuru
 
 		void write_number(double val)
 		{
+			if (val == 0 && std::signbit(val)) {
+				_ss << "-0.0";
+				return;
+			}
+
 			auto as_int = (int64_t)val;
 			if ((double)as_int == val) {
-				_ss << as_int;
-			} else if (std::isfinite(val)) {
+				_ss << as_int << ".0"; // Make sure it's recognized as a double for round-tripping
+				return;
+			}
+
+			if (std::isfinite(val)) {
 				// No unnecessary zeros.
 
-				auto as_float = (float)val;
-				if ((double)as_float == val) {
-					// It's actually a float!
-					// Try short and nice:
-					//auto str = to_string(val);
-					std::stringstream temp_ss;
-					temp_ss << as_float;
-					auto str = temp_ss.str();
-					if (std::strtof(str.c_str(), nullptr) == as_float) {
-						_ss << str;
-						return;
-					} else {
-						_ss << std::setprecision(8) << as_float;
-					}
-				} else {
-					// Try short and nice:
-					//auto str = to_string(val);
-					std::stringstream temp_ss;
-					temp_ss << val;
-					auto str = temp_ss.str();
-					if (std::strtod(str.c_str(), nullptr) == val) {
-						_ss << str;
-					} else {
-						_ss << std::setprecision(16) << val;
-					}
+				// Try single digit of precision (for denormals):
+				_temp_ss.str("");
+				_temp_ss << std::setprecision(1) << val;
+				_temp_string = _temp_ss.str();
+				// printf("Trying '%s'...\n", _temp_string.c_str());
+				if (std::strtod(_temp_string.c_str(), nullptr) == val) {
+					// printf("Written as double with setprecision(16)\n");
+					_ss << _temp_string;
+					return;
 				}
+
+				// Try default digits of precision:
+				_temp_ss.str("");
+				_temp_ss << val;
+				_temp_string = _temp_ss.str();
+				if (std::strtod(_temp_string.c_str(), nullptr) == val) {
+					// printf("Written as double\n");
+					_ss << _temp_string;
+					return;
+				}
+
+				// Try 16 digits of precision:
+				_temp_ss.str("");
+				_temp_ss << std::setprecision(16) << val;
+				_temp_string = _temp_ss.str();
+				if (std::strtod(_temp_string.c_str(), nullptr) == val) {
+					// printf("Written as double with setprecision(16)\n");
+					_ss << _temp_string;
+					return;
+				}
+
+				// Nope, full 17 digits needed:
+				// printf("Written as double with setprecision(17)\n");
+				_ss << std::setprecision(17) << val;
 			} else if (val == +std::numeric_limits<double>::infinity()) {
 				if (!_options.inf) {
 					CONFIGURU_ONERROR("Can't encode infinity");
