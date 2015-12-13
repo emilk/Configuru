@@ -2423,8 +2423,6 @@ namespace configuru
 
 	struct Writer
 	{
-		using ObjIterator = Config::ConfigObjectImpl::const_iterator;
-
 		DocInfo_SP        _doc;
 		FormatOptions     _options;
 		std::stringstream _ss;
@@ -2432,7 +2430,6 @@ namespace configuru
 		// Reuse memory:
 		std::stringstream        _temp_ss;
 		std::string              _temp_string;
-		std::vector<ObjIterator> _temp_pairs;
 
 		void write_indent(unsigned indent)
 		{
@@ -2451,6 +2448,14 @@ namespace configuru
 					write_indent(indent);
 					_ss << c << "\n";
 				}
+			}
+		}
+
+		void write_prefix_comments(unsigned indent, const Config& cfg)
+		{
+			if (!_options.write_comments) { return; }
+			if (cfg.has_comments()) {
+				write_prefix_comments(indent, cfg.comments().prefix);
 			}
 		}
 
@@ -2478,7 +2483,7 @@ namespace configuru
 			}
 
 			if (write_prefix) {
-				write_prefix_comments(indent, config.comments().prefix);
+				write_prefix_comments(indent, config);
 			}
 
 			if (config.is_null()) {
@@ -2522,7 +2527,7 @@ namespace configuru
 					_ss << "[\n";
 					auto&& array = config.as_array();
 					for (size_t i = 0; i < array.size(); ++i) {
-						write_prefix_comments(indent + 1, array[i].comments().prefix);
+						write_prefix_comments(indent + 1, array[i]);
 						write_indent(indent + 1);
 						write_value(indent + 1, array[i], false, true);
 						if (_options.array_omit_comma || i + 1 == array.size()) {
@@ -2565,27 +2570,30 @@ namespace configuru
 		{
 			// Write in same order as input:
 			auto&& object = config.as_object();
-			_temp_pairs.clear();
+
+			using ObjIterator = Config::ConfigObjectImpl::const_iterator;
+			std::vector<ObjIterator> pairs;
+
 			size_t longest_key = 0;
 			for (auto it=object.begin(); it!=object.end(); ++it) {
-				_temp_pairs.push_back(it);
+				pairs.push_back(it);
 				longest_key = std::max(longest_key, it->first.size());
 			}
 
 			if (_options.sort_keys) {
-				std::sort(begin(_temp_pairs), end(_temp_pairs), [](const ObjIterator& a, const ObjIterator& b) {
+				std::sort(begin(pairs), end(pairs), [](const ObjIterator& a, const ObjIterator& b) {
 					return a->first < b->first;
 				});
 			} else {
-				std::sort(begin(_temp_pairs), end(_temp_pairs), [](const ObjIterator& a, const ObjIterator& b) {
+				std::sort(begin(pairs), end(pairs), [](const ObjIterator& a, const ObjIterator& b) {
 					return a->second.nr < b->second.nr;
 				});
 			}
 
 			size_t i = 0;
-			for (auto&& it : _temp_pairs) {
+			for (auto&& it : pairs) {
 				auto&& value = it->second.value;
-				write_prefix_comments(indent, value.comments().prefix);
+				write_prefix_comments(indent, value);
 				write_indent(indent);
 				write_key(it->first);
 				if (_options.compact()) {
@@ -2600,10 +2608,10 @@ namespace configuru
 				}
 				write_value(indent, value, false, true);
 				if (_options.compact()) {
-					if (i + 1 < _temp_pairs.size()) {
+					if (i + 1 < pairs.size()) {
 						_ss << ",";
 					}
-				} else if (_options.array_omit_comma || i + 1 == _temp_pairs.size()) {
+				} else if (_options.array_omit_comma || i + 1 == pairs.size()) {
 					_ss << "\n";
 				} else {
 					_ss << ",\n";
