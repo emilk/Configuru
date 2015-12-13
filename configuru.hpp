@@ -1464,9 +1464,9 @@ namespace configuru
 		bool is_reserved_identifier(const char* ptr)
 		{
 			if (strncmp(ptr, "true", 4)==0 || strncmp(ptr, "null", 4)==0) {
-				return !IDENT_CHARS[ptr[4]];
+				return !IDENT_CHARS[(uint8_t)ptr[4]];
 			} else if (strncmp(ptr, "false", 5)==0) {
-				return !IDENT_CHARS[ptr[5]];
+				return !IDENT_CHARS[(uint8_t)ptr[5]];
 			} else {
 				return false;
 			}
@@ -1493,7 +1493,7 @@ namespace configuru
 	void set_range(bool lookup[256], char a, char b)
 	{
 		for (char c=a; c<=b; ++c) {
-			lookup[c] = true;
+			lookup[(uint8_t)c] = true;
 		}
 	}
 
@@ -1504,11 +1504,11 @@ namespace configuru
 		_ptr        = str;
 		_line_start = str;
 
-		IDENT_STARTERS['_'] = true;
+		IDENT_STARTERS[(uint8_t)'_'] = true;
 		set_range(IDENT_STARTERS, 'a', 'z');
 		set_range(IDENT_STARTERS, 'A', 'Z');
 
-		IDENT_CHARS['_'] = true;
+		IDENT_CHARS[(uint8_t)'_'] = true;
 		set_range(IDENT_CHARS, 'a', 'z');
 		set_range(IDENT_CHARS, 'A', 'Z');
 		set_range(IDENT_CHARS, '0', '9');
@@ -1646,7 +1646,7 @@ namespace configuru
 			auto state = get_state();
 			skip_white_ignore_comments();
 
-			if (IDENT_STARTERS[_ptr[0]] && !is_reserved_identifier(_ptr)) {
+			if (IDENT_STARTERS[(uint8_t)_ptr[0]] && !is_reserved_identifier(_ptr)) {
 				is_object = true;
 			} else if (_ptr[0] == '"' || _ptr[0] == '@') {
 				parse_string();
@@ -1708,19 +1708,19 @@ namespace configuru
 		}
 		else if (_ptr[0] == 'n') {
 			parse_assert(_ptr[1]=='u' && _ptr[2]=='l' && _ptr[3]=='l', "Expected 'null'");
-			parse_assert(!IDENT_CHARS[_ptr[4]], "Expected 'null'");
+			parse_assert(!IDENT_CHARS[(uint8_t)_ptr[4]], "Expected 'null'");
 			_ptr += 4;
 			dst = nullptr;
 		}
 		else if (_ptr[0] == 't') {
 			parse_assert(_ptr[1]=='r' && _ptr[2]=='u' && _ptr[3]=='e', "Expected 'true'");
-			parse_assert(!IDENT_CHARS[_ptr[4]], "Expected 'true'");
+			parse_assert(!IDENT_CHARS[(uint8_t)_ptr[4]], "Expected 'true'");
 			_ptr += 4;
 			dst = true;
 		}
 		else if (_ptr[0] == 'f') {
 			parse_assert(_ptr[1]=='a' && _ptr[2]=='l' && _ptr[3]=='s' && _ptr[4]=='e', "Expected 'false'");
-			parse_assert(!IDENT_CHARS[_ptr[5]], "Expected 'false'");
+			parse_assert(!IDENT_CHARS[(uint8_t)_ptr[5]], "Expected 'false'");
 			_ptr += 5;
 			dst = false;
 		}
@@ -1737,19 +1737,19 @@ namespace configuru
 			// Some kind of number:
 
 			if (_ptr[0] == '-' && _ptr[1] == 'i' && _ptr[2]=='n' && _ptr[3]=='f') {
-				parse_assert(!IDENT_CHARS[_ptr[4]], "Expected -inf");
+				parse_assert(!IDENT_CHARS[(uint8_t)_ptr[4]], "Expected -inf");
 				parse_assert(_options.inf, "infinity forbidden.");
 				_ptr += 4;
 				dst = -std::numeric_limits<double>::infinity();
 			}
 			else if (_ptr[0] == '+' && _ptr[1] == 'i' && _ptr[2]=='n' && _ptr[3]=='f') {
-				parse_assert(!IDENT_CHARS[_ptr[4]], "Expected +inf");
+				parse_assert(!IDENT_CHARS[(uint8_t)_ptr[4]], "Expected +inf");
 				parse_assert(_options.inf, "infinity forbidden.");
 				_ptr += 4;
 				dst = std::numeric_limits<double>::infinity();
 			}
 			else if (_ptr[0] == '+' && _ptr[1] == 'N' && _ptr[2]=='a' && _ptr[3]=='N') {
-				parse_assert(!IDENT_CHARS[_ptr[4]], "Expected +NaN");
+				parse_assert(!IDENT_CHARS[(uint8_t)_ptr[4]], "Expected +NaN");
 				parse_assert(_options.nan, "NaN (Not a Number) forbidden.");
 				_ptr += 4;
 				dst = std::numeric_limits<double>::quiet_NaN();
@@ -1817,7 +1817,7 @@ namespace configuru
 				throw_indentation_error(_indentation, line_indentation);
 			}
 
-			if (IDENT_STARTERS[_ptr[0]] && !is_reserved_identifier(_ptr)) {
+			if (IDENT_STARTERS[(uint8_t)_ptr[0]] && !is_reserved_identifier(_ptr)) {
 				throw_error("Found identifier; expected value. Did you mean to use a {object} rather than a [array]?");
 			}
 
@@ -1909,9 +1909,9 @@ namespace configuru
 			auto pre_key_state = get_state();
 			std::string key;
 
-			if (IDENT_STARTERS[_ptr[0]] && !is_reserved_identifier(_ptr)) {
+			if (IDENT_STARTERS[(uint8_t)_ptr[0]] && !is_reserved_identifier(_ptr)) {
 				parse_assert(_options.identifiers_keys, "You need to surround keys with quotes");
-				while (IDENT_CHARS[_ptr[0]]) {
+				while (IDENT_CHARS[(uint8_t)_ptr[0]]) {
 					key += _ptr[0];
 					_ptr += 1;
 				}
@@ -1974,7 +1974,7 @@ namespace configuru
 		}
 	}
 
-	void Parser::parse_finite_number(Config& dst)
+	void Parser::parse_finite_number(Config& out)
 	{
 		int sign = +1;
 
@@ -1996,7 +1996,7 @@ namespace configuru
 			parse_assert(_options.hexadecimal_integers, "Hexadecimal numbers forbidden.");
 			_ptr += 2;
 			auto start = _ptr;
-			dst = sign * (int64_t)strtoull(start, (char**)&_ptr, 16);
+			out = sign * (int64_t)strtoull(start, (char**)&_ptr, 16);
 			parse_assert(start < _ptr, "Missing hexaxdecimal digits after 0x");
 			return;
 		}
@@ -2005,7 +2005,7 @@ namespace configuru
 			parse_assert(_options.binary_integers, "Binary numbers forbidden.");
 			_ptr += 2;
 			auto start = _ptr;
-			dst = sign * (int64_t)strtoull(start, (char**)&_ptr, 2);
+			out = sign * (int64_t)strtoull(start, (char**)&_ptr, 2);
 			parse_assert(start < _ptr, "Missing binary digits after 0b");
 			return;
 		}
@@ -2015,18 +2015,22 @@ namespace configuru
 		while ('0' <= *p && *p <= '9') {
 			p += 1;
 		}
-		if (*p == '.' || *p == 'e' || *p == 'E') {
-			// Floating point
-			const auto start = _ptr;
-			dst = sign * strtod(start, (char**)&_ptr);
-			parse_assert(start < _ptr, "Invalid float");
+
+		const auto start = _ptr;
+		const double unsigned_double = strtod(start, (char**)&_ptr);
+		parse_assert(start < _ptr, "Invalid number");
+
+		const double TWO_TO_63 = 9223372036854775808.0;
+
+		if (*p == '.' || *p == 'e' || *p == 'E' || unsigned_double >= TWO_TO_63) {
+			out = sign * unsigned_double;
 		} else {
 			// Integer:
-			const auto start = _ptr;
+			_ptr = start; // Roll back
 			const auto unsigned_number = strtoll(start, (char**)&_ptr, 10);
-			dst = sign * unsigned_number;
 			parse_assert(start < _ptr, "Invalid integer");
 			parse_assert(start[0] != '0' || unsigned_number == 0, "Integer may not start with a zero");
+			out = sign * unsigned_number;
 		}
 	}
 
