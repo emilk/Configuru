@@ -104,6 +104,20 @@ void test_roundtrip(Tester& tester, FormatOptions options, T value)
 	}
 }
 
+template<typename T>
+void test_writer(Tester& tester, FormatOptions options, std::string name, T value, const std::string& expected)
+{
+	std::string serialized = configuru::write(Config(value), options);
+	if (serialized[serialized.size() - 1] == '\n') {
+		serialized.resize(serialized.size() - 1);
+	}
+	if (serialized == expected) {
+		tester.print_pass(name);
+	} else {
+		tester.print_fail(name, "Expected: '" + expected + "', got: '" + serialized + "'");
+	}
+}
+
 void test_special(Tester& tester)
 {
 	auto format = configuru::JSON;
@@ -123,6 +137,9 @@ void test_special(Tester& tester)
 	test_roundtrip(tester, JSON, 3.14f);
 	test_roundtrip(tester, JSON, 3.14000010490417);
 	test_roundtrip(tester, JSON, 1234567890123456ll);
+
+	test_writer(tester, JSON, "3.14 (double)", 3.14,  "3.14");
+	test_writer(tester, JSON, "3.14f (float)", 3.14f, "3.14");
 }
 
 void test_roundtrip_string(Tester& tester)

@@ -2639,6 +2639,24 @@ namespace configuru
 			if (std::isfinite(val)) {
 				// No unnecessary zeros.
 
+				auto as_float = (float)val;
+				if ((double)as_float == val) {
+					// It's actually a float!
+					// Try short and nice:
+					//auto str = to_string(val);
+					std::stringstream temp_ss;
+					temp_ss << as_float;
+					auto str = temp_ss.str();
+					if (std::strtof(str.c_str(), nullptr) == as_float) {
+						// printf("Written as float\n");
+						_ss << str;
+					} else {
+						// printf("Written as float with setprecision(8)\n");
+						_ss << std::setprecision(8) << as_float;
+					}
+					return;
+				}
+
 				// Try single digit of precision (for denormals):
 				_temp_ss.str("");
 				_temp_ss << std::setprecision(1) << val;
