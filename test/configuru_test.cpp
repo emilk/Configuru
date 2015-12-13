@@ -14,6 +14,9 @@
 
 namespace fs = boost::filesystem;
 
+const std::string PASS_STRING = (std::string)loguru::terminal_green() + "PASS: " + loguru::terminal_reset();
+const std::string FAIL_STRING = (std::string)loguru::terminal_red()   + "FAIL: " + loguru::terminal_reset();
+
 std::vector<fs::path> list_files(fs::path directory, std::string extension)
 {
     std::vector<fs::path> result;
@@ -34,17 +37,17 @@ void test_code(std::string test_name, bool should_pass, size_t& num_run, size_t&
 		code();
 
 		if (should_pass) {
-			std::cout << loguru::terminal_green() << "PASS: " << loguru::terminal_reset() << test_name << std::endl;
+			std::cout << PASS_STRING << test_name << std::endl;
 		} else {
 			std::cout <<loguru::terminal_red() <<  "SHOULD NOT HAVE PARSED: " << loguru::terminal_reset() << test_name << std::endl;
 			num_failed += 1;
 		}
 	} catch (std::exception& e) {
 		if (should_pass) {
-			std::cout << loguru::terminal_red() << "FAILED: " << loguru::terminal_reset() << test_name << ": " << e.what() << std::endl << std::endl;
+			std::cout << FAIL_STRING << test_name << ": " << e.what() << std::endl << std::endl;
 			num_failed += 1;
 		} else {
-			std::cout << loguru::terminal_green() << "PASS: " << loguru::terminal_reset() << test_name << ": " << e.what() << std::endl << std::endl;
+			std::cout << PASS_STRING << test_name << ": " << e.what() << std::endl << std::endl;
 		}
 	}
 	num_run += 1;
@@ -71,10 +74,10 @@ void test_roundtrip(FormatOptions options, T value, size_t& num_run, size_t& num
 	Config parsed_config = configuru::parse_string(serialized.c_str(), options, "roundtrip");
 	T parsed_value = (T)parsed_config;
 	if (value == parsed_value) {
-		std::cout << loguru::terminal_green() << "PASS: " << loguru::terminal_reset() << serialized << std::endl;
+		std::cout << PASS_STRING << serialized << std::endl;
 	} else {
 		num_failed += 1;
-		std::cout << loguru::terminal_red() << "FAILED: " << loguru::terminal_reset() << "failed round-trip: " << serialized << std::endl;
+		std::cout << FAIL_STRING << "failed round-trip: " << serialized << std::endl;
 	}
 	num_run += 1;
 }
@@ -98,6 +101,31 @@ void test_special(size_t& num_run, size_t& num_failed)
 	test_roundtrip(JSON, 3.14f, num_run, num_failed);
 	test_roundtrip(JSON, 3.14000010490417, num_run, num_failed);
 	test_roundtrip(JSON, 1234567890123456ll, num_run, num_failed);
+}
+
+void test_strings(size_t& num_run, size_t& num_failed)
+{
+	auto test_string = [&](const std::string& json, const std::string& expected)
+	{
+		std::string output = (std::string)configuru::parse_string(json.c_str(), configuru::JSON, "string");
+		if (output == expected) {
+			std::cout << PASS_STRING << expected << std::endl;
+		} else {
+			std::cout << FAIL_STRING << json << ": " << output << " != " << expected << std::endl;
+			num_failed += 1;
+		}
+		num_run += 1;
+	};
+
+    test_string("\"\"",                         "");
+    test_string("\"Hello\"",                    "Hello");
+    test_string("\"Hello\\nWorld\"",            "Hello\nWorld");
+    // test_string("\"Hello\\u0000World\"",        "Hello\0World");
+    test_string("\"\\\"\\\\/\\b\\f\\n\\r\\t\"", "\"\\/\b\f\n\r\t");
+    test_string("\"\\u0024\"",                  "\x24");             // Dollar sign U+0024
+    test_string("\"\\u00A2\"",                  "\xC2\xA2");         // Cents sign U+00A2
+    test_string("\"\\u20AC\"",                  "\xE2\x82\xAC");     // Euro sign U+20AC
+    test_string("\"\\uD834\\uDD1E\"",           "\xF0\x9D\x84\x9E"); // G clef sign U+1D11E
 }
 
 void test_bad_usage(size_t& num_run, size_t& num_failed)
@@ -161,8 +189,8 @@ void run_unit_tests()
 	std::cout << std::endl << std::endl;
 
 	test_special(num_run, num_failed);
-
 	test_bad_usage(num_run, num_failed);
+	test_strings(num_run, num_failed);
 
 	if (num_failed == 0) {
 		printf("%s%lu/%lu tests passed!%s\n", loguru::terminal_green(), num_run, num_run, loguru::terminal_reset());

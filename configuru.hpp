@@ -90,7 +90,7 @@ Like JSON, but with simplifications. Example file:
 		nested_key: +inf
 	}
 	python_style: """This is a string
-	                 which spans many lines."""
+					 which spans many lines."""
 	"C# style": @"Also nice for \ and stuff"
 
 * Top-level can be key-value pairs, or a value.
@@ -331,7 +331,7 @@ namespace configuru
 		template<typename IntT>
 		IntT as_integer() const
 		{
-    		static_assert(std::is_integral<IntT>::value, "Not an integer.");
+			static_assert(std::is_integral<IntT>::value, "Not an integer.");
 			assert_type(Int);
 			check((int64_t)(IntT)_u.i == _u.i, "Integer out of range");
 			return static_cast<IntT>(_u.i);
@@ -645,7 +645,7 @@ namespace configuru
 
 		/* Indentation should be a single tab,
 		   multiple spaces or an empty string.
-		    An empty string means the output will be compact. */
+			An empty string means the output will be compact. */
 		std::string indentation              = "\t";
 		bool        enforce_indentation      = true;  // Must indent with tabs?
 
@@ -839,8 +839,8 @@ namespace configuru
 		for (const auto& v : values)
 		{
 			if (!v.is_array()       ||
-			    v.array_size() != 2 ||
-			    !v[0].is_string())
+				v.array_size() != 2 ||
+				!v[0].is_string())
 			{
 				is_object = false;
 				break;
@@ -1238,8 +1238,8 @@ namespace configuru
 	bool ConfigComments::empty() const
 	{
 		return prefix.empty()
-		    && postfix.empty()
-		    && pre_end_brace.empty();
+			&& postfix.empty()
+			&& pre_end_brace.empty();
 	}
 
 	void ConfigComments::append(ConfigComments&& other)
@@ -1548,7 +1548,7 @@ namespace configuru
 				found_newline = true;
 			}
 			else if (indentation != "" &&
-			         strncmp(_ptr, indentation.c_str(), indentation.size()) == 0)
+					 strncmp(_ptr, indentation.c_str(), indentation.size()) == 0)
 			{
 				_ptr += indentation.size();
 				if (_options.enforce_indentation && indentation == "\t") {
@@ -1840,9 +1840,9 @@ namespace configuru
 			bool is_last_element = !_ptr[0] || _ptr[0] == ']';
 
 			if (is_last_element) {
-                parse_assert(!has_comma || _options.array_trailing_comma,
-                    "Trailing comma forbidden.", comma_state);
-            } else {
+				parse_assert(!has_comma || _options.array_trailing_comma,
+					"Trailing comma forbidden.", comma_state);
+			} else {
 				if (_options.array_omit_comma) {
 					parse_assert(has_separator, "Expected a space, newline, comma or ]");
 				} else {
@@ -1962,9 +1962,9 @@ namespace configuru
 			bool is_last_element = !_ptr[0] || _ptr[0] == '}';
 
 			if (is_last_element) {
-                parse_assert(!has_comma || _options.object_trailing_comma,
-                    "Trailing comma forbidden.", comma_state);
-            } else {
+				parse_assert(!has_comma || _options.object_trailing_comma,
+					"Trailing comma forbidden.", comma_state);
+			} else {
 				if (_options.object_omit_comma) {
 					parse_assert(has_separator, "Expected a space, newline, comma or }");
 				} else {
@@ -2145,8 +2145,20 @@ namespace configuru
 					} else if (_ptr[0] == 'u') {
 						// Four hexadecimal characters
 						_ptr += 1;
-						uint64_t unicode = parse_hex(4);
-						auto num_bytes_written = encode_utf8(str, unicode);
+						uint64_t codepoint = parse_hex(4);
+
+						if (0xD800 <= codepoint and codepoint <= 0xDBFF)
+						{
+							// surrogate pair
+							parse_assert(_ptr[0] == '\\' && _ptr[1] == 'u',
+										 "Missing second unicode surrogate.");
+							_ptr += 2;
+							uint64_t codepoint2 = parse_hex(4);
+							parse_assert(0xDC00 <= codepoint2 && codepoint2 <= 0xDFFF, "Invalid second unicode surrogate");
+							codepoint = (codepoint << 10) + codepoint2 - 0x35FDC00;
+						}
+
+						auto num_bytes_written = encode_utf8(str, codepoint);
 						parse_assert(num_bytes_written > 0, "Bad unicode codepoint");
 					} else if (_ptr[0] == 'U') {
 						// Eight hexadecimal characters
@@ -2175,9 +2187,9 @@ namespace configuru
 			if ('0' <= c && c <= '9') {
 				ret += c - '0';
 			} else if ('a' <= c && c <= 'f') {
-				ret += c - 'a';
+				ret += 10 + c - 'a';
 			} else if ('A' <= c && c <= 'F') {
-				ret += c - 'A';
+				ret += 10 + c - 'A';
 			} else {
 				throw_error("Expected hexadecimal digit, got " + quote(_ptr[0]));
 			}
@@ -2626,7 +2638,7 @@ namespace configuru
 			const size_t LONG_LINE = 240;
 
 			if (!_options.str_python_multiline       ||
-			    str.find('\n') == std::string::npos ||
+				str.find('\n') == std::string::npos ||
 				str.length() < LONG_LINE            ||
 				str.find("\"\"\"") != std::string::npos)
 			{
@@ -2670,7 +2682,7 @@ namespace configuru
 				else if (c == '\r') { _ss << "\\r";  }
 				else if (c == '\t') { _ss << "\\t";  }
 				else if (0 <= c && c < 0x20) { write_unicode_16(c); }
-				else { _ss << c; } // TODO: add option to quote
+				else { _ss << c; } // TODO: add option to escape unicode
 			}
 			_ss << '"';
 		}
