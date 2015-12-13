@@ -2370,8 +2370,6 @@ namespace configuru
 //    YP  YP    88  Yb 88   88   888888 88  Yb
 
 #include <cstdlib>  // strtod
-#include <iomanip>
-#include <sstream>
 
 namespace configuru
 {
@@ -2438,19 +2436,15 @@ namespace configuru
 
 	struct Writer
 	{
-		DocInfo_SP        _doc;
-		FormatOptions     _options;
-		std::stringstream _ss;
-
-		// Reuse memory:
-		std::stringstream        _temp_ss;
-		std::string              _temp_string;
+		DocInfo_SP    _doc;
+		FormatOptions _options;
+		std::string   _out;
 
 		void write_indent(unsigned indent)
 		{
 			if (_options.compact()) { return; }
 			for (unsigned i=0; i<indent; ++i) {
-				_ss << _options.indentation;
+				_out += _options.indentation;
 			}
 		}
 
@@ -2458,10 +2452,11 @@ namespace configuru
 		{
 			if (!_options.write_comments) { return; }
 			if (!comments.empty()) {
-				_ss << "\n";
+				_out += "\n";
 				for (auto&& c : comments) {
 					write_indent(indent);
-					_ss << c << "\n";
+					_out += c;
+					_out.push_back('\n');
 				}
 			}
 		}
@@ -2479,7 +2474,8 @@ namespace configuru
 			if (!_options.write_comments) { return; }
 			(void)indent; // TODO: reindent comments
 			for (auto&& c : comments) {
-				_ss << " " << c;
+				_out += " ";
+				_out += c;
 			}
 		}
 
@@ -2493,7 +2489,9 @@ namespace configuru
 		{
 			if (_options.allow_macro && config.doc() && config.doc() != _doc) {
 				write_file(config.doc()->filename, config, _options);
-				_ss << "#include <" << config.doc()->filename << ">";
+				_out += "#include <";
+				_out += config.doc()->filename;
+				_out += ">";
 				return;
 			}
 
@@ -2502,11 +2500,13 @@ namespace configuru
 			}
 
 			if (config.is_null()) {
-				_ss << "null";
+				_out += "null";
 			} else if (config.is_bool()) {
-				_ss << ((bool)config ? "true" : "false");
+				_out += ((bool)config ? "true" : "false");
 			} else if (config.is_int()) {
-				_ss << (int64_t)config;
+				char temp_buff[64];
+				snprintf(temp_buff, sizeof(temp_buff), "%lld", (int64_t)config);
+				_out += temp_buff;
 			} else if (config.is_float()) {
 				write_number( (double)config );
 			} else if (config.is_string()) {
@@ -2514,63 +2514,63 @@ namespace configuru
 			} else if (config.is_array()) {
 				if (config.array_size() == 0 && !has_pre_end_brace_comments(config)) {
 					if (_options.compact()) {
-						_ss << "[]";
+						_out += "[]";
 					} else {
-						_ss << "[ ]";
+						_out += "[ ]";
 					}
 				} else if (_options.compact() || is_simple_array(config)) {
-					_ss << "[";
+					_out += "[";
 					if (!_options.compact()) {
-						_ss << " ";
+						_out += " ";
 					}
 					auto&& array = config.as_array();
 					for (size_t i = 0; i < array.size(); ++i) {
 						write_value(indent + 1, array[i], false, true);
 						if (_options.compact()) {
 							if (i + 1 < array.size()) {
-								_ss << ",";
+								_out += ",";
 							}
 						} else if (_options.array_omit_comma || i + 1 == array.size()) {
-							_ss << " ";
+							_out += " ";
 						} else {
-							_ss << ", ";
+							_out += ", ";
 						}
 					}
 					write_pre_brace_comments(indent + 1, config.comments().pre_end_brace);
-					_ss << "]";
+					_out += "]";
 				} else {
-					_ss << "[\n";
+					_out += "[\n";
 					auto&& array = config.as_array();
 					for (size_t i = 0; i < array.size(); ++i) {
 						write_prefix_comments(indent + 1, array[i]);
 						write_indent(indent + 1);
 						write_value(indent + 1, array[i], false, true);
 						if (_options.array_omit_comma || i + 1 == array.size()) {
-							_ss << "\n";
+							_out += "\n";
 						} else {
-							_ss << ",\n";
+							_out += ",\n";
 						}
 					}
 					write_pre_brace_comments(indent + 1, config.comments().pre_end_brace);
 					write_indent(indent);
-					_ss << "]";
+					_out += "]";
 				}
 			} else if (config.is_object()) {
 				if (config.object_size() == 0 && !has_pre_end_brace_comments(config)) {
 					if (_options.compact()) {
-						_ss << "{}";
+						_out += "{}";
 					} else {
-						_ss << "{ }";
+						_out += "{ }";
 					}
 				} else {
 					if (_options.compact()) {
-						_ss << "{";
+						_out += "{";
 					} else {
-						_ss << "{\n";
+						_out += "{\n";
 					}
 					write_object_contents(indent + 1, config);
 					write_indent(indent);
-					_ss << "}";
+					_out += "}";
 				}
 			} else {
 				throw std::runtime_error("Cannot serialize Config");
@@ -2612,24 +2612,24 @@ namespace configuru
 				write_indent(indent);
 				write_key(it->first);
 				if (_options.compact()) {
-					_ss << ":";
+					_out += ":";
 				} else if (_options.omit_colon_before_object && value.is_object() && value.object_size() != 0) {
-					_ss << " ";
+					_out += " ";
 				} else {
-					_ss << ": ";
+					_out += ": ";
 					for (size_t i=it->first.size(); i<longest_key; ++i) {
-						_ss << " ";
+						_out += " ";
 					}
 				}
 				write_value(indent, value, false, true);
 				if (_options.compact()) {
 					if (i + 1 < pairs.size()) {
-						_ss << ",";
+						_out += ",";
 					}
 				} else if (_options.array_omit_comma || i + 1 == pairs.size()) {
-					_ss << "\n";
+					_out += "\n";
 				} else {
-					_ss << ",\n";
+					_out += ",\n";
 				}
 				i += 1;
 			}
@@ -2640,7 +2640,7 @@ namespace configuru
 		void write_key(const std::string& str)
 		{
 			if (_options.identifiers_keys && is_identifier(str.c_str())) {
-				_ss << str;
+				_out += str;
 			} else {
 				write_string(str);
 			}
@@ -2649,86 +2649,75 @@ namespace configuru
 		void write_number(double val)
 		{
 			if (val == 0 && std::signbit(val)) {
-				_ss << "-0.0";
+				_out += "-0.0";
 				return;
 			}
 
 			auto as_int = (int64_t)val;
 			if ((double)as_int == val) {
-				_ss << as_int << ".0"; // Make sure it's recognized as a double for round-tripping
+				char temp_buff[64];
+				snprintf(temp_buff, sizeof(temp_buff), "%lld", as_int);
+				_out += temp_buff;
+				_out += ".0"; // Make sure it's recognized as a double for round-tripping
 				return;
 			}
 
 			if (std::isfinite(val)) {
-				// No unnecessary zeros.
+				char temp_buff[64];
 
 				auto as_float = (float)val;
 				if ((double)as_float == val) {
 					// It's actually a float!
-					// Try short and nice:
-					//auto str = to_string(val);
-					std::stringstream temp_ss;
-					temp_ss << as_float;
-					auto str = temp_ss.str();
-					if (std::strtof(str.c_str(), nullptr) == as_float) {
-						// printf("Written as float\n");
-						_ss << str;
+					snprintf(temp_buff, sizeof(temp_buff), "%g", as_float);
+					if (std::strtof(temp_buff, nullptr) == as_float) {
+
+						_out += temp_buff;
 					} else {
-						// printf("Written as float with setprecision(8)\n");
-						_ss << std::setprecision(8) << as_float;
+						snprintf(temp_buff, sizeof(temp_buff), "%.8g", as_float);
+						_out += temp_buff;
 					}
 					return;
 				}
 
 				// Try single digit of precision (for denormals):
-				_temp_ss.str("");
-				_temp_ss << std::setprecision(1) << val;
-				_temp_string = _temp_ss.str();
-				// printf("Trying '%s'...\n", _temp_string.c_str());
-				if (std::strtod(_temp_string.c_str(), nullptr) == val) {
-					// printf("Written as double with setprecision(16)\n");
-					_ss << _temp_string;
+				snprintf(temp_buff, sizeof(temp_buff), "%.1g", val);
+				if (std::strtod(temp_buff, nullptr) == val) {
+					_out += temp_buff;
 					return;
 				}
 
 				// Try default digits of precision:
-				_temp_ss.str("");
-				_temp_ss << val;
-				_temp_string = _temp_ss.str();
-				if (std::strtod(_temp_string.c_str(), nullptr) == val) {
-					// printf("Written as double\n");
-					_ss << _temp_string;
+				snprintf(temp_buff, sizeof(temp_buff), "%g", val);
+				if (std::strtod(temp_buff, nullptr) == val) {
+					_out += temp_buff;
 					return;
 				}
 
 				// Try 16 digits of precision:
-				_temp_ss.str("");
-				_temp_ss << std::setprecision(16) << val;
-				_temp_string = _temp_ss.str();
-				if (std::strtod(_temp_string.c_str(), nullptr) == val) {
-					// printf("Written as double with setprecision(16)\n");
-					_ss << _temp_string;
+				snprintf(temp_buff, sizeof(temp_buff), "%.16g", val);
+				if (std::strtod(temp_buff, nullptr) == val) {
+					_out += temp_buff;
 					return;
 				}
 
 				// Nope, full 17 digits needed:
-				// printf("Written as double with setprecision(17)\n");
-				_ss << std::setprecision(17) << val;
+				snprintf(temp_buff, sizeof(temp_buff), "%.17g", val);
+				_out += temp_buff;
 			} else if (val == +std::numeric_limits<double>::infinity()) {
 				if (!_options.inf) {
 					CONFIGURU_ONERROR("Can't encode infinity");
 				}
-				_ss << "+inf";
+				_out += "+inf";
 			} else if (val == -std::numeric_limits<double>::infinity()) {
 				if (!_options.inf) {
 					CONFIGURU_ONERROR("Can't encode negative infinity");
 				}
-				_ss << "-inf";
+				_out += "-inf";
 			} else {
 				if (!_options.nan) {
 					CONFIGURU_ONERROR("Can't encode NaN");
 				}
-				_ss << "+NaN";
+				_out += "+NaN";
 			}
 		}
 
@@ -2750,8 +2739,8 @@ namespace configuru
 		void write_hex_digit(unsigned num)
 		{
 			CONFIGURU_ASSERT(num < 16u);
-			if (num < 10u) { _ss << num; }
-			else { _ss << ('a' + num - 10); }
+			if (num < 10u) { _out.push_back(char('0' + num)); }
+			else { _out.push_back(char('a' + num - 10)); }
 		}
 
 		void write_hex_16(uint16_t n)
@@ -2764,33 +2753,33 @@ namespace configuru
 
 		void write_unicode_16(uint16_t c)
 		{
-			_ss << "\\u";
+			_out += "\\u";
 			write_hex_16(c);
 		}
 
 		void write_quoted_string(const std::string& str) {
-			_ss << '"';
+			_out += '"';
 			for (char c : str) {
-				if      (c == '\\') { _ss << "\\\\"; }
-				else if (c == '\"') { _ss << "\\\""; }
-				//else if (c == '\'') { _ss << "\\\'"; }
-				else if (c == '\0') { _ss << "\\0";  }
-				else if (c == '\b') { _ss << "\\b";  }
-				else if (c == '\f') { _ss << "\\f";  }
-				else if (c == '\n') { _ss << "\\n";  }
-				else if (c == '\r') { _ss << "\\r";  }
-				else if (c == '\t') { _ss << "\\t";  }
+				if      (c == '\\') { _out += "\\\\"; }
+				else if (c == '\"') { _out += "\\\""; }
+				//else if (c == '\'') { _out += "\\\'"; }
+				else if (c == '\0') { _out += "\\0";  }
+				else if (c == '\b') { _out += "\\b";  }
+				else if (c == '\f') { _out += "\\f";  }
+				else if (c == '\n') { _out += "\\n";  }
+				else if (c == '\r') { _out += "\\r";  }
+				else if (c == '\t') { _out += "\\t";  }
 				else if (0 <= c && c < 0x20) { write_unicode_16(c); }
-				else { _ss << c; } // TODO: add option to escape unicode
+				else { _out.push_back(c); } // TODO: add option to escape unicode
 			}
-			_ss << '"';
+			_out.push_back('"');
 		}
 
 		void write_verbatim_string(const std::string& str)
 		{
-			_ss << "\"\"\"";
-			_ss << str;
-			_ss << "\"\"\"";
+			_out += "\"\"\"";
+			_out += str;
+			_out += "\"\"\"";
 		}
 	}; // struct Writer
 
@@ -2804,10 +2793,10 @@ namespace configuru
 			w.write_object_contents(0, config);
 		} else {
 			w.write_value(0, config, true, true);
-			w._ss << "\n"; // Good form
+			w._out += "\n"; // Good form
 		}
 
-		return w._ss.str();
+		return std::move(w._out);
 	}
 
 	static void write_text_file(const char* path, const std::string& data)

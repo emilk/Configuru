@@ -158,8 +158,10 @@ void test_roundtrip_string(Tester& tester)
 		}
 	};
 
-	test_roundtrip("-9223372036854775808");
+	test_roundtrip("42");
+	test_roundtrip("-42");
 	test_roundtrip("9223372036854775807");
+	test_roundtrip("-9223372036854775808");
 	test_roundtrip("0.0");
 	test_roundtrip("-0.0");
 	test_roundtrip("1.0");
