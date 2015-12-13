@@ -647,7 +647,7 @@ namespace configuru
 
 		/* Indentation should be a single tab,
 		   multiple spaces or an empty string.
-			An empty string means the output will be compact. */
+		   An empty string means the output will be compact. */
 		std::string indentation              = "\t";
 		bool        enforce_indentation      = true;  // Must indent with tabs?
 
@@ -667,6 +667,7 @@ namespace configuru
 		bool        hexadecimal_integers     = true;  // Allow 0xff
 		bool        binary_integers          = true;  // Allow 0b1010
 		bool        unary_plus               = true;  // Allow +42
+		bool        distinct_floats          = true;  // Print 9.0 as "9.0", not just "9". A must for round-tripping.
 
 		// Arrays
 		bool        array_omit_comma         = true;  // Allow [1 2 3]
@@ -722,6 +723,7 @@ namespace configuru
 		options.hexadecimal_integers     = false;
 		options.binary_integers          = false;
 		options.unary_plus               = false;
+		options.distinct_floats          = true;
 
 		// Arrays
 		options.array_omit_comma         = false;
@@ -2648,7 +2650,7 @@ namespace configuru
 
 		void write_number(double val)
 		{
-			if (val == 0 && std::signbit(val)) {
+			if (_options.distinct_floats && val == 0 && std::signbit(val)) {
 				_out += "-0.0";
 				return;
 			}
@@ -2658,7 +2660,9 @@ namespace configuru
 				char temp_buff[64];
 				snprintf(temp_buff, sizeof(temp_buff), "%lld", as_int);
 				_out += temp_buff;
-				_out += ".0"; // Make sure it's recognized as a double for round-tripping
+				if (_options.distinct_floats) {
+					_out += ".0";
+				}
 				return;
 			}
 
