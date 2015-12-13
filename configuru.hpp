@@ -423,6 +423,8 @@ namespace configuru
 			return as_object().count(key) != 0;
 		}
 
+		void insert_or_assign(const std::string& key, Config&& config);
+
 		// Only for objects.
 		bool erase(const std::string& key);
 
@@ -616,7 +618,7 @@ namespace configuru
 	class ParseError : public std::exception
 	{
 	public:
-		ParseError(DocInfo_SP doc, unsigned line, unsigned column, std::string msg)
+		ParseError(const DocInfo_SP& doc, unsigned line, unsigned column, const std::string& msg)
 		: _line(line), _column(column)
 		{
 			_what = doc->filename + ":" + std::to_string(line) + ":" + std::to_string(column);
@@ -811,7 +813,7 @@ namespace configuru
 		DocInfo_SP            doc;      // Of parent object
 		unsigned              line;     // Of parent object
 		std::string           key;
-		std::atomic<unsigned> ref_count;
+		std::atomic<unsigned> ref_count { 1 };
 
 		BadLookupInfo(DocInfo_SP doc, unsigned line, std::string key)
 			: doc(std::move(doc)), line(line), key(std::move(key)) {}
@@ -1006,6 +1008,19 @@ namespace configuru
 			entry.accessed = true;
 		}
 		return entry.value;
+	}
+
+	void Config::insert_or_assign(const std::string& key, Config&& config)
+	{
+		auto&& object = as_object();
+		auto&& entry = object[key];
+		if (entry.nr == BAD_ENTRY) {
+			// New entry
+			entry.nr = (unsigned)object.size() - 1;
+		} else {
+			entry.accessed = true;
+		}
+		entry.value = std::move(config);
 	}
 
 	bool Config::erase(const std::string& key)
@@ -1959,7 +1974,7 @@ namespace configuru
 				has_separator = true;
 			}
 
-			object[key] = std::move(value);
+			object.insert_or_assign(key, std::move(value));
 
 			bool is_last_element = !_ptr[0] || _ptr[0] == '}';
 

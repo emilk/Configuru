@@ -677,6 +677,32 @@ namespace loguru
 #endif // NDEBUG
 
 #if LOGURU_REPLACE_GLOG
+	#undef LOG
+	#undef VLOG
+	#undef LOG_IF
+	#undef VLOG_IF
+	#undef CHECK
+	#undef CHECK_NOTNULL
+	#undef CHECK_EQ
+	#undef CHECK_NE
+	#undef CHECK_LT
+	#undef CHECK_LE
+	#undef CHECK_GT
+	#undef CHECK_GE
+	#undef DLOG
+	#undef DVLOG
+	#undef DLOG_IF
+	#undef DVLOG_IF
+	#undef DCHECK
+	#undef DCHECK_NOTNULL
+	#undef DCHECK_EQ
+	#undef DCHECK_NE
+	#undef DCHECK_LT
+	#undef DCHECK_LE
+	#undef DCHECK_GT
+	#undef DCHECK_GE
+	#undef VLOG_IS_ON
+
 	#define LOG            LOG_S
 	#define VLOG           VLOG_S
 	#define LOG_IF         LOG_IF_S
@@ -701,12 +727,12 @@ namespace loguru
 	#define DCHECK_LE      DCHECK_LE_S
 	#define DCHECK_GT      DCHECK_GT_S
 	#define DCHECK_GE      DCHECK_GE_S
+	#define VLOG_IS_ON(verbosity) ((verbosity) <= loguru::current_verbosity_cutoff())
 
 	#define FLAGS_v                loguru::g_stderr_verbosity
 	#define FLAGS_alsologtostderr  loguru::g_alsologtostderr
 	#define FLAGS_colorlogtostderr loguru::g_colorlogtostderr
 
-	#define VLOG_IS_ON(verbosity) ((verbosity) <= loguru::current_verbosity_cutoff())
 #endif // LOGURU_REPLACE_GLOG
 
 #endif // LOGURU_WITH_STREAMS || LOGURU_REPLACE_GLOG
@@ -746,14 +772,23 @@ This will define all the Loguru functions so that the linker may find them.
 	#include <direct.h>
 #else
 	#include <sys/stat.h> // mkdir
-	#define LOGURU_PTHREADS 1
 #endif
 
-#ifdef __GNUG__
+// TODO: use defined(_POSIX_VERSION) for some of these things?
+
+#ifdef _WIN32
+	#define LOGURU_PTHREADS    0
+	#define LOGURU_STACKTRACES 0
+#else
+	#define LOGURU_PTHREADS    1
+	#define LOGURU_STACKTRACES 1
+#endif
+
+#if LOGURU_STACKTRACES
 	#include <cxxabi.h>    // for __cxa_demangle
 	#include <dlfcn.h>     // for dladdr
 	#include <execinfo.h>  // for backtrace
-#endif // __GNUG__
+#endif // LOGURU_STACKTRACES
 
 #if LOGURU_PTHREADS
 	#include <pthread.h>
@@ -888,7 +923,7 @@ namespace loguru
 		int bytes_needed = vsnprintf(nullptr, 0, format, vlist);
 		CHECK_F(bytes_needed >= 0, "Bad string format: '%s'", format);
 		char* buff = (char*)malloc(bytes_needed + 1);
-		vsnprintf(str.data(), bytes_needed, format, vlist);
+		vsnprintf(buff, bytes_needed, format, vlist);
 		return buff;
 #else
 		char* buff = nullptr;
@@ -1215,7 +1250,7 @@ namespace loguru
 	// ------------------------------------------------------------------------
 	// Stack traces
 
-#ifdef __GNUG__
+#if LOGURU_STACKTRACES
 	std::string demangle(const char* name)
 	{
 		int status = -1;
@@ -1316,14 +1351,14 @@ namespace loguru
 		return prettify_stacktrace(result);
 	}
 
-#else // __GNUG__
+#else // LOGURU_STACKTRACES
 	std::string stacktrace_as_stdstring(int)
 	{
 		#warning "Loguru: No stacktraces available on this platform"
 		return "";
 	}
 
-#endif // __GNUG__
+#endif // LOGURU_STACKTRACES
 
 	Text stacktrace(int skip)
 	{
