@@ -1,6 +1,3 @@
-#include <iostream>
-
-#include <boost/filesystem.hpp>
 
 #define LOGURU_IMPLEMENTATION 1
 #include "loguru.hpp"
@@ -9,6 +6,10 @@
 
 #define CONFIGURU_IMPLEMENTATION 1
 #include "../configuru.hpp"
+
+#include <iostream>
+
+#include <boost/filesystem.hpp>
 
 #include "json.hpp"
 
@@ -94,7 +95,7 @@ void test_all_in(Tester& tester, FormatOptions options, bool should_pass, fs::pa
 template<typename T>
 void test_roundtrip(Tester& tester, FormatOptions options, T value)
 {
-	std::string serialized = configuru::write(Config(value), options);
+	std::string serialized = configuru::dump_string(Config(value), options);
 	Config parsed_config = configuru::parse_string(serialized.c_str(), options, "roundtrip");
 	T parsed_value = (T)parsed_config;
 	if (value == parsed_value) {
@@ -107,7 +108,7 @@ void test_roundtrip(Tester& tester, FormatOptions options, T value)
 template<typename T>
 void test_writer(Tester& tester, FormatOptions options, std::string name, T value, const std::string& expected)
 {
-	std::string serialized = configuru::write(Config(value), options);
+	std::string serialized = configuru::dump_string(Config(value), options);
 	if (serialized[serialized.size() - 1] == '\n') {
 		serialized.resize(serialized.size() - 1);
 	}
@@ -147,7 +148,7 @@ void test_roundtrip_string(Tester& tester)
 	auto test_roundtrip = [&](const std::string& json)
 	{
 		Config cfg = configuru::parse_string(json.c_str(), JSON, "roundtrip");
-		std::string serialized = configuru::write(cfg, JSON);
+		std::string serialized = configuru::dump_string(cfg, JSON);
 		if (serialized[serialized.size() - 1] == '\n') {
 			serialized.resize(serialized.size() - 1);
 		}
@@ -410,28 +411,28 @@ void parse_and_print()
 
 	std::cout << std::endl;
 	std::cout << "// CFG:" << std::endl;
-	std::cout << configuru::write(cfg, configuru::CFG);
+	std::cout << configuru::dump_string(cfg, configuru::CFG);
 
 	std::cout << std::endl;
 	std::cout << "// JSON with tabs:" << std::endl;
-	std::cout << configuru::write(cfg, configuru::JSON);
+	std::cout << configuru::dump_string(cfg, configuru::JSON);
 
 	std::cout << std::endl;
 	std::cout << "// JSON with two spaces:" << std::endl;
 	auto format = configuru::JSON;
 	format.indentation = "  ";
-	std::cout << configuru::write(cfg, format);
+	std::cout << configuru::dump_string(cfg, format);
 
 	std::cout << std::endl;
 	std::cout << "// JSON with keys sorted lexicographically:" << std::endl;
 	format.sort_keys = true;
-	std::cout << configuru::write(cfg, format);
+	std::cout << configuru::dump_string(cfg, format);
 
 	std::cout << std::endl;
 	std::cout << "// Compact JSON:" << std::endl;
 	format = configuru::JSON;
 	format.indentation = "";
-	std::cout << configuru::write(cfg, format);
+	std::cout << configuru::dump_string(cfg, format);
 
 	std::cout << std::endl;
 }
@@ -497,7 +498,7 @@ void create()
 			{ "everything", 42 }
 		} },
 		{ "array",   { 1, 0, 2 } },
-		{ "object", {
+		{ "object",  {
 			{ "currency", "USD" },
 			{ "value",    42.99 }
 		} }
@@ -513,7 +514,7 @@ void test_comments()
 	auto out_path = "../../test_suite/comments_out.cfg";
 	auto out_2_path = "../../test_suite/comments_out_2.cfg";
 	auto data = parse_file(in_path, configuru::CFG);
-	write_file(out_path, data, configuru::CFG);
+	dump_file(out_path, data, configuru::CFG);
 
 	data["number"] = 42;
 	data["array"].push_back("new value");
@@ -526,7 +527,32 @@ void test_comments()
 	};
 	rearranged.erase("object");
 	rearranged.erase("array");
-	write_file(out_2_path, rearranged, configuru::CFG);
+	dump_file(out_2_path, rearranged, configuru::CFG);
+}
+
+void test_conversions()
+{
+	auto parse_json = [](const std::string& json) {
+		return configuru::parse_string(json.c_str(), JSON, "");
+	};
+
+	auto strings = (std::vector<std::string>)parse_json(R"(["hello", "you"])");
+	CHECK_EQ_F(strings.size(), 2u);
+	CHECK_EQ_F(strings[0], "hello");
+	CHECK_EQ_F(strings[1], "you");
+
+	auto ints = (std::vector<int>)parse_json(R"([0,1,2])");
+	CHECK_EQ_F(ints.size(), 3u);
+	CHECK_EQ_F(ints[0], 0);
+	CHECK_EQ_F(ints[1], 1);
+	CHECK_EQ_F(ints[2], 2);
+
+	auto pairs = (std::vector<std::pair<std::string, float>>)parse_json(R"([["1", 2.2], ["3", 4.4]])");
+	CHECK_EQ_F(pairs.size(), 2u);
+	CHECK_EQ_F(pairs[0].first, "1");
+	CHECK_EQ_F(pairs[0].second, 2.2f);
+	CHECK_EQ_F(pairs[1].first, "3");
+	CHECK_EQ_F(pairs[1].second, 4.4f);
 }
 
 int main(int argc, char* argv[])
@@ -536,6 +562,7 @@ int main(int argc, char* argv[])
 	parse_and_print();
 	create();
 	test_comments();
+	test_conversions();
 
 #define EXAMPLE_JSON {                                        \
 		{"float",       3.14f},                               \
@@ -545,8 +572,8 @@ int main(int argc, char* argv[])
 	}
 
 	std::cout << "nlohmann: \n"       << nlohmann::json(EXAMPLE_JSON).dump(4) << std::endl;
-	std::cout << "configuru JSON: \n" << configuru::write(EXAMPLE_JSON, JSON) << std::endl;
-	std::cout << "configuru CFG: \n"  << configuru::write(EXAMPLE_JSON, CFG)  << std::endl;
+	std::cout << "configuru JSON: \n" << configuru::dump_string(EXAMPLE_JSON, JSON) << std::endl;
+	std::cout << "configuru CFG: \n"  << configuru::dump_string(EXAMPLE_JSON, CFG)  << std::endl;
 
 	run_unit_tests();
 }

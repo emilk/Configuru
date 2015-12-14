@@ -65,7 +65,7 @@ Usage (parsing):
 	// You can modify the read config:
 	cfg["message"] = "goodbye";
 
-	write_file("output.cfg", cfg); // Will include comments in the original.
+	dump_file("output.cfg", cfg); // Will include comments in the original.
 
 Usage (writing):
 ----------------
@@ -77,7 +77,7 @@ Usage (writing):
 		{ "key1", "value1" },
 		{ "key2", "value2" },
 	};
-	write_file("output.cfg", cfg);
+	dump_file("output.cfg", cfg);
 
 
 Config format
@@ -122,6 +122,7 @@ Tabs anywhere else is not allowed.
 
 #include <initializer_list>
 #include <map>
+#include <ostream>
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
@@ -313,11 +314,21 @@ namespace configuru
 		template<typename T>
 		explicit operator std::vector<T>() const
 		{
+			const auto& array = as_array();
 			std::vector<T> ret;
-			for (auto&& config : as_array()) {
+			ret.reserve(array.size());
+			for (auto&& config : array) {
 				ret.push_back((T)config);
 			}
 			return ret;
+		}
+
+		template<typename Left, typename Right>
+		explicit operator std::pair<Left, Right>() const
+		{
+			const auto& array = as_array();
+			check(array.size() == 2u, "Mismatched array length.");
+			return {(Left)array[0], (Right)array[1]};
 		}
 
 		const std::string& as_string() const { assert_type(String); return *_u.str; }
@@ -754,26 +765,84 @@ namespace configuru
 		return options;
 	}
 
-	static const FormatOptions CFG  = FormatOptions();
-	static const FormatOptions JSON = make_json_options();
+	inline FormatOptions make_forgiving_options()
+	{
+		FormatOptions options;
+
+		options.indentation              = "\t";
+		options.enforce_indentation      = false;
+
+		// Top file:
+		options.empty_file               = true;
+		options.implicit_top_object      = true;
+		options.implicit_top_array       = true;
+
+		// Comments:
+		options.single_line_comments     = true;
+		options.block_comments           = true;
+		options.nesting_block_comments   = true;
+
+		// Numbers:
+		options.inf                      = true;
+		options.nan                      = true;
+		options.hexadecimal_integers     = true;
+		options.binary_integers          = true;
+		options.unary_plus               = true;
+		options.distinct_floats          = true;
+
+		// Arrays
+		options.array_omit_comma         = true;
+		options.array_trailing_comma     = true;
+
+		// Objects:
+		options.identifiers_keys         = true;
+		options.object_separator_equal   = true;
+		options.allow_space_before_colon = true;
+		options.omit_colon_before_object = true;
+		options.object_omit_comma        = true;
+		options.object_trailing_comma    = true;
+		options.object_duplicate_keys    = true;
+
+		// Strings
+		options.str_csharp_verbatim      = true;
+		options.str_python_multiline     = true;
+		options.str_32bit_unicode        = true;
+		options.str_allow_tab            = true;
+
+		// Special
+		options.allow_macro              = true;
+
+		// When writing:
+		options.write_comments           = false;
+		options.sort_keys                = false;
+
+		return options;
+	}
+
+	static const FormatOptions CFG       = FormatOptions();
+	static const FormatOptions JSON      = make_json_options();
+	static const FormatOptions FORGIVING = make_forgiving_options();
 
 	struct ParseInfo {
 		std::unordered_map<std::string, Config> parsed_files; // Two #include gives same Config tree.
 	};
 
-	// Zero-ended Utf-8 encoded string of characters.
-	// May throw ParseError.
-	Config parse_string(const char* str, const FormatOptions& options, DocInfo _doc, ParseInfo& info);
+	// The parser may throw ParseError.
+	// `str` should be a zero-ended Utf-8 encoded string of characters.
+	// The `name` should be something akin to a filename. It is only for error reporting.
 	Config parse_string(const char* str, const FormatOptions& options, const char* name);
-	Config parse_file(const std::string& path, const FormatOptions& options, DocInfo_SP doc, ParseInfo& info);
 	Config parse_file(const std::string& path, const FormatOptions& options);
+
+	// Advanced usage:
+	Config parse_string(const char* str, const FormatOptions& options, DocInfo _doc, ParseInfo& info);
+	Config parse_file(const std::string& path, const FormatOptions& options, DocInfo_SP doc, ParseInfo& info);
 
 	// ----------------------------------------------------------
 	// Writes in a pretty format with perfect reversibility of everything (including numbers).
-	std::string write(const Config& config, const FormatOptions& options);
+	std::string dump_string(const Config& config, const FormatOptions& options);
 
-	void write_file(const std::string& path, const Config& config, const FormatOptions& options);
-}
+	void dump_file(const std::string& path, const Config& config, const FormatOptions& options);
+} // namespace configuru
 
 #endif // CONFIGURU_HEADER_HPP
 
@@ -1227,7 +1296,7 @@ namespace configuru
 
 	std::ostream& operator<<(std::ostream& os, const Config& cfg)
 	{
-		return os << write(cfg, JSON);
+		return os << dump_string(cfg, JSON);
 	}
 }
 
@@ -2490,7 +2559,7 @@ namespace configuru
 							  bool write_prefix, bool write_postfix)
 		{
 			if (_options.allow_macro && config.doc() && config.doc() != _doc) {
-				write_file(config.doc()->filename, config, _options);
+				dump_file(config.doc()->filename, config, _options);
 				_out += "#include <";
 				_out += config.doc()->filename;
 				_out += ">";
@@ -2787,7 +2856,7 @@ namespace configuru
 		}
 	}; // struct Writer
 
-	std::string write(const Config& config, const FormatOptions& options)
+	std::string dump_string(const Config& config, const FormatOptions& options)
 	{
 		Writer w;
 		w._options = options;
@@ -2816,9 +2885,9 @@ namespace configuru
 		}
 	}
 
-	void write_file(const std::string& path, const configuru::Config& config, const FormatOptions& options)
+	void dump_file(const std::string& path, const configuru::Config& config, const FormatOptions& options)
 	{
-		auto str = write(config, options);
+		auto str = dump_string(config, options);
 		write_text_file(path.c_str(), str);
 	}
 } // namespace configuru
