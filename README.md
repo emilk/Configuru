@@ -31,7 +31,7 @@ Configuru prides itself on great error messages both for parse errors and for va
 
 ### Parse errors
 
-	equal_in_map.cfg:1:16: Expected : after object key
+	equal_in_object.cfg:1:16: Expected : after object key
 	{ "is_this_ok" = true }
 	               ^
 
@@ -117,15 +117,17 @@ Usage (parsing):
 	float pi = cfg.get_or(pi, 3.14f);
 
 	const auto& array = cfg["array"];
-	if (cfg["array"].is_list()) {
+	if (cfg["array"].is_array()) {
 		std::cout << "First element: " << cfg["array"][0u];
 		for (const Config& element : cfg["array"].as_array()) {
+			std::cout << element << std::endl;
 		}
 	}
 
 	for (auto& p : cfg["object"].as_object()) {
-		std::cout << "Key: "   << p.first << std::endl;
-		std::cout << "Value: " << p.second;
+		std::cout << "Key: "   << p.key() << std::endl;
+		std::cout << "Value: " << p.value();
+		p.value() = "new value";
 	}
 
 	cfg.check_dangling(); // Make sure we haven't forgot reading a key!

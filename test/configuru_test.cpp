@@ -121,6 +121,7 @@ void test_writer(Tester& tester, FormatOptions options, std::string name, T valu
 
 void test_special(Tester& tester)
 {
+	LOG_SCOPE_FUNCTION(0);
 	auto format = configuru::JSON;
 	format.enforce_indentation = true;
 	format.indentation = "\t";
@@ -145,6 +146,7 @@ void test_special(Tester& tester)
 
 void test_roundtrip_string(Tester& tester)
 {
+	LOG_SCOPE_FUNCTION(0);
 	auto test_roundtrip = [&](const std::string& json)
 	{
 		Config cfg = configuru::parse_string(json.c_str(), JSON, "roundtrip");
@@ -176,6 +178,7 @@ void test_roundtrip_string(Tester& tester)
 
 void test_strings(Tester& tester)
 {
+	LOG_SCOPE_FUNCTION(0);
 	auto test_string = [&](const std::string& json, const std::string& expected)
 	{
 		std::string output = (std::string)configuru::parse_string(json.c_str(), configuru::JSON, "string");
@@ -200,6 +203,7 @@ void test_strings(Tester& tester)
 
 void test_doubles(Tester& tester)
 {
+	LOG_SCOPE_FUNCTION(0);
 	auto test_double = [&](const std::string& json, const double expected)
 	{
 		double output = (double)configuru::parse_string(json.c_str(), configuru::JSON, "string");
@@ -322,6 +326,7 @@ void test_doubles(Tester& tester)
 
 void test_bad_usage(Tester& tester)
 {
+	LOG_SCOPE_FUNCTION(0);
 	auto config = configuru::parse_file("../../test_suite/special/config.json", configuru::JSON);
 	test_code(tester, "access_float_as_float", true, [&]{
 		auto b = (float)config["pi"];
@@ -359,6 +364,7 @@ void test_bad_usage(Tester& tester)
 
 void run_unit_tests()
 {
+	LOG_SCOPE_FUNCTION(0);
 	Tester tester;
 	std::cout << "JSON expected to pass:" << std::endl;
 	test_all_in(tester, configuru::JSON, true, "../../test_suite/json_pass",      ".json");
@@ -405,7 +411,8 @@ obj:   {
 
 void parse_and_print()
 {
-	auto cfg = configuru::parse_string(TEST_CFG, FormatOptions(), "test_cfg");
+	LOG_SCOPE_FUNCTION(0);
+	auto cfg = configuru::parse_string(TEST_CFG, configuru::CFG, "test_cfg");
 	std::cout << "pi: " << cfg["pi"] << std::endl;
 	cfg.check_dangling();
 
@@ -439,6 +446,7 @@ void parse_and_print()
 
 void create()
 {
+	LOG_SCOPE_FUNCTION(0);
 	/*
 	Based on https://github.com/nlohmann/json#examples
 
@@ -489,7 +497,7 @@ void create()
 	};
 
 	// instead, you could also write (which looks very similar to the JSON above)
-	configuru::Config cfg2 = {
+	const configuru::Config cfg2 = {
 		{ "pi",      3.141   },
 		{ "happy",   true    },
 		{ "name",    "Emil"  },
@@ -508,8 +516,48 @@ void create()
 	std::cout << "cfg2:\n" << cfg2 << std::endl;
 }
 
+void test_iteration()
+{
+	LOG_SCOPE_FUNCTION(0);
+	const char* TEST_CFG_2 = R"(
+	{
+		"value":  3.14,
+		"array":  ["array_0", "array_1"],
+		"object": {
+			"key_0": 0,
+			"key_1": 1
+	}
+	})";
+
+	{
+		const auto const_cfg = configuru::parse_string(TEST_CFG_2, configuru::JSON, "test_cfg_2");
+		const_cfg.check_dangling(); // Should warn about "value", "array" and "object"
+
+		std::cout << "object contents: " << std::endl;
+		for (const auto& p : const_cfg.as_object())
+		{
+			std::cout << p.key() << ": " << p.value() << std::endl;
+		}
+
+		const_cfg.check_dangling(); // Should warn about "key_0" and "key_1"
+	}
+
+	{
+		auto mut_cfg = configuru::parse_string(TEST_CFG_2, configuru::JSON, "test_cfg_2");
+		for (auto& p : mut_cfg.as_object())
+		{
+			p.value() = p.key();
+		}
+		mut_cfg.check_dangling(); // Shouldn't warn.
+		CHECK_F(mut_cfg["value"]  == "value");
+		CHECK_F(mut_cfg["array"]  == "array");
+		CHECK_F(mut_cfg["object"] == "object");
+	}
+}
+
 void test_comments()
 {
+	LOG_SCOPE_FUNCTION(0);
 	auto in_path  = "../../test_suite/comments_in.cfg";
 	auto out_path = "../../test_suite/comments_out.cfg";
 	auto out_2_path = "../../test_suite/comments_out_2.cfg";
@@ -532,6 +580,7 @@ void test_comments()
 
 void test_conversions()
 {
+	LOG_SCOPE_FUNCTION(0);
 	auto parse_json = [](const std::string& json) {
 		return configuru::parse_string(json.c_str(), JSON, "");
 	};
@@ -561,6 +610,7 @@ int main(int argc, char* argv[])
 
 	parse_and_print();
 	create();
+	test_iteration();
 	test_comments();
 	test_conversions();
 

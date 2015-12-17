@@ -52,12 +52,14 @@ Usage (parsing):
 	if (cfg["array"].is_array()) {
 		std::cout << "First element: " << cfg["array"][0];
 		for (const Config& element : cfg["array"].as_array()) {
+			std::cout << element << std::endl;
 		}
 	}
 
 	for (auto& p : cfg["object"].as_object()) {
-		std::cout << "Key: "   << p.first << std::endl;
-		std::cout << "Value: " << p.second.value;
+		std::cout << "Key: "   << p.key() << std::endl;
+		std::cout << "Value: " << p.value();
+		p.value() = "new value";
 	}
 
 	cfg.check_dangling(); // Make sure we haven't forgot reading a key!
@@ -120,12 +122,13 @@ Tabs anywhere else is not allowed.
 #ifndef CONFIGURU_HEADER_HPP
 #define CONFIGURU_HEADER_HPP
 
+#include <cmath>
 #include <initializer_list>
+#include <iterator>
 #include <map>
 #include <ostream>
 #include <stdexcept>
 #include <string>
-#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -177,9 +180,9 @@ namespace configuru
 	template<typename Config_T>
 	struct Config_Entry
 	{
-		Config_T     value;
-		unsigned     nr       = BAD_ENTRY; // Size of the object prior to adding this entry
-		mutable bool accessed = false;     // Set to true if accessed.
+		Config_T     _value;
+		unsigned     _nr       = BAD_ENTRY; // Size of the object prior to adding this entry
+		mutable bool _accessed = false;     // Set to true if accessed.
 	};
 
 	using Comment = std::string;
@@ -224,13 +227,10 @@ namespace configuru
 		using ConfigArrayImpl = std::vector<Config>;
 		using ConfigObjectImpl = std::map<std::string, ObjectEntry>;
 		struct ConfigArray {
-			std::atomic<unsigned> ref_count { 1 };
-			ConfigArrayImpl       impl;
+			std::atomic<unsigned> _ref_count { 1 };
+			ConfigArrayImpl       _impl;
 		};
-		struct ConfigObject {
-			std::atomic<unsigned> ref_count { 1 };
-			ConfigObjectImpl      impl;
-		};
+		struct ConfigObject;
 
 		// ----------------------------------------
 		// Constructors:
@@ -374,13 +374,13 @@ namespace configuru
 
 		ConfigArrayImpl& as_array() {
 			assert_type(Array);
-			return _u.array->impl;
+			return _u.array->_impl;
 		}
 
 		const ConfigArrayImpl& as_array() const
 		{
 			assert_type(Array);
-			return _u.array->impl;
+			return _u.array->_impl;
 		}
 
 		Config& operator[](size_t ix)
@@ -409,30 +409,26 @@ namespace configuru
 		// ----------------------------------------
 		// Object:
 
-		size_t object_size() const
-		{
-			return as_object().size();
-		}
+		size_t object_size() const;
 
-		ConfigObjectImpl& as_object()
+		// for (auto& p : cfg.as_object()) { p.value() = p.key(); }
+		ConfigObject& as_object()
 		{
 			assert_type(Object);
-			return _u.object->impl;
+			return *_u.object;
 		}
 
-		const ConfigObjectImpl& as_object() const
+		// for (const auto& p : cfg.as_object()) { cout << p.key() << ": " << p.value(); }
+		const ConfigObject& as_object() const
 		{
 			assert_type(Object);
-			return _u.object->impl;
+			return *_u.object;
 		}
 
 		const Config& operator[](const std::string& key) const;
 		Config& operator[](const std::string& key);
 
-		bool has_key(const std::string& key) const
-		{
-			return as_object().count(key) != 0;
-		}
+		bool has_key(const std::string& key) const;
 
 		void insert_or_assign(const std::string& key, Config&& config);
 
@@ -537,6 +533,85 @@ namespace configuru
 
 	// ------------------------------------------------------------------------
 
+	struct Config::ConfigObject
+	{
+		std::atomic<unsigned> _ref_count { 1 };
+		ConfigObjectImpl      _impl;
+
+		class iterator
+		{
+		public:
+			explicit iterator(ConfigObjectImpl::iterator it) : _it(std::move(it)) {}
+
+			const iterator& operator*() const {
+				_it->second._accessed = true;
+				return *this;
+			}
+
+			iterator& operator++() {
+			    ++_it;
+			    return *this;
+			}
+
+			friend bool operator!=(const iterator& a, const iterator& b) {
+			    return a._it != b._it;
+			}
+
+			const std::string& key()   const { return _it->first;         }
+			Config&            value() const { return _it->second._value; }
+
+		private:
+			ConfigObjectImpl::iterator _it;
+		};
+
+		class const_iterator
+		{
+		public:
+			explicit const_iterator(ConfigObjectImpl::const_iterator it) : _it(std::move(it)) {}
+
+			const const_iterator& operator*() const {
+				_it->second._accessed = true;
+				return *this;
+			}
+
+			const_iterator& operator++() {
+			    ++_it;
+			    return *this;
+			}
+
+			friend bool operator!=(const const_iterator& a, const const_iterator& b) {
+			    return a._it != b._it;
+			}
+
+			const std::string& key()   const { return _it->first;         }
+			const Config&      value() const { return _it->second._value; }
+
+
+		private:
+			ConfigObjectImpl::const_iterator _it;
+		};
+
+		iterator begin()  { return iterator{ _impl.begin() }; }
+		iterator end()    { return iterator{ _impl.end()   }; }
+		const_iterator begin() const { return const_iterator{ _impl.cbegin() }; }
+		const_iterator end()   const { return const_iterator{ _impl.cend()   }; }
+		const_iterator cbegin() const { return const_iterator{ _impl.cbegin() }; }
+		const_iterator cend()   const { return const_iterator{ _impl.cend()   }; }
+	};
+
+	// ------------------------------------------------------------------------
+
+	inline bool operator==(const Config& a, const Config& b)
+	{
+		return Config::deep_eq(a, b);
+	}
+	inline bool operator!=(const Config& a, const Config& b)
+	{
+		return !Config::deep_eq(a, b);
+	}
+
+	// ------------------------------------------------------------------------
+
 	template<> inline bool                          Config::as() const { return as_bool();   }
 	template<> inline signed int                    Config::as() const { return as_integer<signed int>();         }
 	template<> inline unsigned int                  Config::as() const { return as_integer<unsigned int>();       }
@@ -563,14 +638,14 @@ namespace configuru
 	template<typename T>
 	T Config::get_or(const std::string& key, const T& default_value) const
 	{
-		auto&& object = as_object();
+		auto&& object = as_object()._impl;
 		auto it = object.find(key);
 		if (it == object.end()) {
 			return default_value;
 		} else {
 			const auto& entry = it->second;
-			entry.accessed = true;
-			return configuru::as<T>(entry.value);
+			entry._accessed = true;
+			return configuru::as<T>(entry._value);
 		}
 	}
 
@@ -587,7 +662,7 @@ namespace configuru
 		visitor(config);
 		if (config.is_object()) {
 			for (auto&& p : config.as_object()) {
-				visit_configs(p.second.value, visitor);
+				visit_configs(p.value(), visitor);
 			}
 		} else if (config.is_array()) {
 			for (auto&& e : config.as_array()) {
@@ -824,7 +899,7 @@ namespace configuru
 	static const FormatOptions FORGIVING = make_forgiving_options();
 
 	struct ParseInfo {
-		std::unordered_map<std::string, Config> parsed_files; // Two #include gives same Config tree.
+		std::map<std::string, Config> parsed_files; // Two #include gives same Config tree.
 	};
 
 	// The parser may throw ParseError.
@@ -884,7 +959,7 @@ namespace configuru
 		DocInfo_SP            doc;      // Of parent object
 		unsigned              line;     // Of parent object
 		std::string           key;
-		std::atomic<unsigned> ref_count { 1 };
+		std::atomic<unsigned> _ref_count { 1 };
 
 		BadLookupInfo(DocInfo_SP doc, unsigned line, std::string key)
 			: doc(std::move(doc)), line(line), key(std::move(key)) {}
@@ -1014,9 +1089,9 @@ namespace configuru
 			_u.str = new std::string(*o._u.str);
 		} else {
 			memcpy(&_u, &o._u, sizeof(_u));
-			if (_type == BadLookupType) { _u.array->ref_count  += 1; }
-			if (_type == Array)         { _u.array->ref_count  += 1; }
-			if (_type == Object)        { _u.object->ref_count += 1; }
+			if (_type == BadLookupType) { _u.array->_ref_count  += 1; }
+			if (_type == Array)         { _u.array->_ref_count  += 1; }
+			if (_type == Object)        { _u.object->_ref_count += 1; }
 		}
 
 		if (o._doc) {
@@ -1053,50 +1128,60 @@ namespace configuru
 		return *this;
 	}
 
+	size_t Config::object_size() const
+	{
+		return as_object()._impl.size();
+	}
+
 	const Config& Config::operator[](const std::string& key) const
 	{
-		auto&& object = as_object();
+		auto&& object = as_object()._impl;
 		auto it = object.find(key);
 		if (it == object.end()) {
 			on_error("Key '" + key + "' not in object");
 		} else {
 			const auto& entry = it->second;
-			entry.accessed = true;
-			return entry.value;
+			entry._accessed = true;
+			return entry._value;
 		}
 	}
 
 	Config& Config::operator[](const std::string& key)
 	{
-		auto&& object = as_object();
+		auto&& object = as_object()._impl;
 		auto&& entry = object[key];
-		if (entry.nr == BAD_ENTRY) {
+		if (entry._nr == BAD_ENTRY) {
 			// New entry
-			entry.nr = (unsigned)object.size() - 1;
-			entry.value._type = BadLookupType;
-			entry.value._u.bad_lookup = new BadLookupInfo{_doc, _line, key};
+			entry._nr = (unsigned)object.size() - 1;
+			entry._value._type = BadLookupType;
+			entry._value._u.bad_lookup = new BadLookupInfo{_doc, _line, key};
 		} else {
-			entry.accessed = true;
+			entry._accessed = true;
 		}
-		return entry.value;
+		return entry._value;
+	}
+
+	bool Config::has_key(const std::string& key) const
+	{
+		return as_object()._impl.count(key) != 0;
 	}
 
 	void Config::insert_or_assign(const std::string& key, Config&& config)
 	{
-		auto&& object = as_object();
+		auto&& object = as_object()._impl;
 		auto&& entry = object[key];
-		if (entry.nr == BAD_ENTRY) {
+		if (entry._nr == BAD_ENTRY) {
 			// New entry
-			entry.nr = (unsigned)object.size() - 1;
+			entry._nr = (unsigned)object.size() - 1;
 		} else {
-			entry.accessed = true;
+			entry._accessed = true;
 		}
-		entry.value = std::move(config);
+		entry._value = std::move(config);
 	}
 
 	bool Config::erase(const std::string& key)
 	{
-		auto& object = as_object();
+		auto& object = as_object()._impl;
 		auto it = object.find(key);
 		if (it == object.end()) {
 			return false;
@@ -1116,13 +1201,13 @@ namespace configuru
 		if (a._type == String) { return *a._u.str == *b._u.str; }
 		if (a._type == Object)    {
 			if (a._u.object == b._u.object) { return true; }
-			auto&& a_object = a.as_object();
-			auto&& b_object = b.as_object();
+			auto&& a_object = a.as_object()._impl;
+			auto&& b_object = b.as_object()._impl;
 			if (a_object.size() != b_object.size()) { return false; }
 			for (auto&& p: a_object) {
 				auto it = b_object.find(p.first);
 				if (it == b_object.end()) { return false; }
-				if (!deep_eq(p.second.value, it->second.value)) { return false; }
+				if (!deep_eq(p.second._value, it->second._value)) { return false; }
 			}
 			return true;
 		}
@@ -1147,10 +1232,10 @@ namespace configuru
 		Config ret = *this;
 		if (ret._type == Object) {
 			ret = Config::object();
-			for (auto&& p : this->as_object()) {
-				auto& dst = ret._u.object->impl[p.first];
-				dst.nr    = p.second.nr;
-				dst.value = p.second.value.deep_clone();
+			for (auto&& p : this->as_object()._impl) {
+				auto& dst = ret._u.object->_impl[p.first];
+				dst._nr    = p.second._nr;
+				dst._value = p.second._value.deep_clone();
 			}
 		}
 		if (ret._type == Array) {
@@ -1166,10 +1251,10 @@ namespace configuru
 	{
 		// TODO: iterating over an object should count as accessing the values
 		if (is_object()) {
-			for (auto&& p : as_object()) {
+			for (auto&& p : as_object()._impl) {
 				auto&& entry = p.second;
-				auto&& value = entry.value;
-				if (entry.accessed) {
+				auto&& value = entry._value;
+				if (entry._accessed) {
 					value.check_dangling();
 				} else {
 					auto where_str = value.where();
@@ -1186,10 +1271,10 @@ namespace configuru
 	void Config::mark_accessed(bool v) const
 	{
 		if (is_object()) {
-			for (auto&& p : as_object()) {
+			for (auto&& p : as_object()._impl) {
 				auto&& entry = p.second;
-				entry.accessed = v;
-				entry.value.mark_accessed(v);
+				entry._accessed = v;
+				entry._value.mark_accessed(v);
 			}
 		} else if (is_array()) {
 			for (auto&& e : as_array()) {
@@ -1232,15 +1317,15 @@ namespace configuru
 	void Config::free()
 	{
 		if (_type == BadLookupType) {
-			if (--_u.bad_lookup->ref_count == 0) {
+			if (--_u.bad_lookup->_ref_count == 0) {
 				delete _u.bad_lookup;
 			}
 		} else if (_type == Object) {
-			if (--_u.object->ref_count == 0) {
+			if (--_u.object->_ref_count == 0) {
 				delete _u.object;
 			}
 		} else if (_type == Array) {
-			if (--_u.array->ref_count == 0) {
+			if (--_u.array->_ref_count == 0) {
 				delete _u.array;
 			}
 		} else if (_type == String) {
@@ -2623,7 +2708,7 @@ namespace configuru
 		void write_object_contents(unsigned indent, const Config& config)
 		{
 			// Write in same order as input:
-			auto&& object = config.as_object();
+			auto&& object = config.as_object()._impl;
 
 			using ObjIterator = Config::ConfigObjectImpl::const_iterator;
 			std::vector<ObjIterator> pairs;
@@ -2640,13 +2725,13 @@ namespace configuru
 				});
 			} else {
 				std::sort(begin(pairs), end(pairs), [](const ObjIterator& a, const ObjIterator& b) {
-					return a->second.nr < b->second.nr;
+					return a->second._nr < b->second._nr;
 				});
 			}
 
 			size_t i = 0;
 			for (auto&& it : pairs) {
-				auto&& value = it->second.value;
+				auto&& value = it->second._value;
 				write_prefix_comments(indent, value);
 				write_indent(indent);
 				write_key(it->first);
