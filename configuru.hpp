@@ -2468,38 +2468,6 @@ namespace configuru
 		}
 	}
 
-	bool is_simple(const Config& var)
-	{
-		if (var.is_array() || var.is_object()) { return false; }
-		if (var.has_comments()) { return false; }
-		return true;
-	}
-
-	bool is_all_numbers(const Config& array)
-	{
-		for (auto& v: array.as_array()) {
-			if (!v.is_number()) {
-				return false;
-			}
-		}
-		return true;
-	}
-
-	bool is_simple_array(const Config& array)
-	{
-		if (array.array_size() <= 16 && is_all_numbers(array)) {
-			return true; // E.g., a 4x4 matrix
-		}
-
-		if (array.array_size() > 4) { return false; }
-		for (auto& v: array.as_array()) {
-			if (!is_simple(v)) {
-				return false;
-			}
-		}
-		return true;
-	}
-
 	bool has_pre_end_brace_comments(const Config& cfg)
 	{
 		return cfg.has_comments() && !cfg.comments().pre_end_brace.empty();
@@ -2853,6 +2821,46 @@ namespace configuru
 			_out += "\"\"\"";
 			_out += str;
 			_out += "\"\"\"";
+		}
+
+		bool is_simple(const Config& var)
+		{
+			if (var.is_array()  && var.array_size()  > 0) { return false; }
+			if (var.is_object() && var.object_size() > 0) { return false; }
+			if (_options.write_comments && var.has_comments()) { return false; }
+			return true;
+		}
+
+		bool is_all_numbers(const Config& array)
+		{
+			for (auto& v: array.as_array()) {
+				if (!v.is_number()) {
+					return false;
+				}
+			}
+			return true;
+		}
+
+		bool is_simple_array(const Config& array)
+		{
+			if (array.array_size() <= 16 && is_all_numbers(array)) {
+				return true; // E.g., a 4x4 matrix
+			}
+
+			if (array.array_size() > 4) { return false; }
+			size_t estimated_width = 0;
+			for (auto& v: array.as_array()) {
+				if (!is_simple(v)) {
+					return false;
+				}
+				if (v.is_string()) {
+					estimated_width += 2 + v.as_string().size();
+				} else {
+					estimated_width += 5;
+				}
+				estimated_width += 2;
+			}
+			return estimated_width < 60;
 		}
 	}; // struct Writer
 

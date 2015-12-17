@@ -46,8 +46,7 @@ int main(int argc, char* argv[])
 	const auto parse_format = configuru::FORGIVING;
 	const auto dump_format  = configuru::JSON;
 
-	for (int i = 1; i < argc; ++i)
-	{
+	for (int i = 1; i < argc; ++i) {
 		format(argv[i], parse_format, dump_format);
 	}
 
