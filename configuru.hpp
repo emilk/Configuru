@@ -12,21 +12,7 @@ recognized, you are granted a perpetual, irrevocable license to copy
 and modify this file as you see fit.
 
 That being said, I would appreciate credit!
-If you find this library useful, tweet me at @ernerfeldt mail me at emil.ernerfeldt@gmail.com.
-
-Overview
---------
-Config read/write. The format is a form of simplified JSON.
-This config library is unique in a few ways:
-
-* Indentation/style must be correct in input.
-* Round-trip parse/write of comments.
-* Novel(?) method for finding typos in config files:
-	When reading a config, "forgotten" keys are warned about. For instance:
-
-		auto cfg = configuru::parse_string("colour = [1,1,1]");
-		auto color = cfg.get_or("color", Color(0, 0, 0));
-		cfg.check_dangling(); // Will warn about how we never read "colour",
+If you find this library useful, tweet me @ernerfeldt or mail me at emil.ernerfeldt@gmail.com.
 
 Usage (general):
 ----------------
@@ -41,7 +27,7 @@ And in one .cpp file:
 Usage (parsing):
 ----------------
 
-	Config cfg = configuru::parse_file("input.json");
+	Config cfg = configuru::parse_file("input.json",  configuru::JSON);
 	float alpha = (float)cfg["alpha"];
 	if (cfg.has_key("beta")) {
 		std::string beta = (std::string)cfg["beta"];
@@ -69,6 +55,9 @@ Usage (parsing):
 
 	dump_file("output.cfg", cfg); // Will include comments in the original.
 
+	Note: all conversions from Config must be explicit.
+	This is because how C++ handles implicit conversions is inherently dangerous.
+
 Usage (writing):
 ----------------
 
@@ -82,8 +71,8 @@ Usage (writing):
 	dump_file("output.cfg", cfg);
 
 
-Config format
--------------
+CFG format
+----------
 
 Like JSON, but with simplifications. Example file:
 
@@ -204,6 +193,18 @@ namespace configuru
 
 	class Config;
 
+	/* Overload this (in cofiguru namespace) for you own types, e.g:
+
+		namespace configuru {
+			template<>
+			inline Vector2f as(const Config& config)
+			{
+				auto&& array = config.as_array();
+				config.check(array.size() == 2, "Expected Vector2f");
+				return {(float)array[0], (float)array[1]};
+			}
+		}
+	*/
 	template<typename T>
 	inline T as(const configuru::Config& config);
 
@@ -217,7 +218,7 @@ namespace configuru
 	{
 	public:
 		enum Type {
-			Uninitialized,
+			Uninitialized, // Accessing a Config of this type is always an error.
 			BadLookupType, // We are the result of a key-lookup in a Object with no hit. We are in effect write-only.
 			Null, Bool, Int, Float, String, Array, Object
 		};
@@ -238,7 +239,7 @@ namespace configuru
 		Config()                     : _type(Uninitialized) { }
 		Config(std::nullptr_t)       : _type(Null)    { }
 		Config(double f)             : _type(Float)   { _u.f = f; }
-		Config(bool   b)             : _type(Bool)    { _u.b = b; }
+		Config(bool b)               : _type(Bool)    { _u.b = b; }
 		Config(int i)                : _type(Int)     { _u.i = i; }
 		Config(unsigned int i)       : _type(Int)     { _u.i = i; }
 		Config(long i)               : _type(Int)     { _u.i = i; }
@@ -254,6 +255,11 @@ namespace configuru
 		Config(const char* str);
 		Config(std::string str);
 
+		/*
+		If the given values are stirng-value pairs, it is assumed to be an object, else an array.
+			Config array{1, 2, 3};
+			Config object{{"name", "Emil"}, {"age", 30}};
+		*/
 		Config(std::initializer_list<Config> values);
 
 		// Used by the parser - no need to use directly.
@@ -278,8 +284,11 @@ namespace configuru
 		Config(Config&& o) noexcept { this->swap(o); }
 
 		Config& operator=(const Config& o);
+
+		// Will still remmeber file/line when assigned an object which has no file/line
 		Config& operator=(Config&& o) noexcept;
 
+		// Swaps file/line too.
 		void swap(Config& o) noexcept;
 
 		#ifdef CONFIG_EXTENSION
@@ -300,17 +309,24 @@ namespace configuru
 		bool is_array()  const { return _type    == Array;      }
 		bool is_number() const { return is_int() || is_float(); }
 
-		// Where in source where we defined?
+		// Returns file:line iff available.
 		std::string where() const;
+
+		// -1 if not set.
 		unsigned line() const { return _line; }
+
+		// Handle to document.
 		const DocInfo_SP& doc() const { return _doc; }
 		void set_doc(const DocInfo_SP& doc) { _doc = doc; }
+
 		// ----------------------------------------
 		// Convertors:
 
+		// Explicit casting, since C++ handles implicit casts real badly.
 		template<typename T>
-		explicit operator T() const { return configuru::as<T>(*this); }
+		explicit operator T() const { return as<T>(*this); }
 
+		// Convenience:
 		template<typename T>
 		explicit operator std::vector<T>() const
 		{
@@ -323,6 +339,7 @@ namespace configuru
 			return ret;
 		}
 
+		// Convenience: TODO: generalize for tuples.
 		template<typename Left, typename Right>
 		explicit operator std::pair<Left, Right>() const
 		{
@@ -339,6 +356,7 @@ namespace configuru
 			assert_type(Bool);
 			return _u.b;
 		}
+
 		template<typename IntT>
 		IntT as_integer() const
 		{
@@ -347,6 +365,7 @@ namespace configuru
 			check((int64_t)(IntT)_u.i == _u.i, "Integer out of range");
 			return static_cast<IntT>(_u.i);
 		}
+
 		float as_float() const
 		{
 			if (_type == Int) {
@@ -356,6 +375,7 @@ namespace configuru
 				return (float)_u.f;
 			}
 		}
+
 		double as_double() const
 		{
 			if (_type == Int) {
@@ -367,16 +387,35 @@ namespace configuru
 		}
 
 		template<typename T>
-		T as() const;
+		T get() const;
+
+		// Returns the value or `default_value` if this is the result of a bad lookup.
+		template<typename T>
+		T get_or(const T& default_value) const
+		{
+			if (_type == BadLookupType) {
+				return default_value;
+			} else {
+				return (T)*this;
+			}
+		}
 
 		// ----------------------------------------
 		// Array:
 
-		ConfigArrayImpl& as_array() {
+		size_t array_size() const
+		{
+			return as_array().size();
+		}
+
+		// for (Config& e : cfg.as_array()) { ... }
+		ConfigArrayImpl& as_array()
+		{
 			assert_type(Array);
 			return _u.array->_impl;
 		}
 
+		// for (const Config& e : cfg.as_array()) { ... }
 		const ConfigArrayImpl& as_array() const
 		{
 			assert_type(Array);
@@ -397,12 +436,8 @@ namespace configuru
 			return array[ix];
 		}
 
-		size_t array_size() const
+		void push_back(Config value)
 		{
-			return as_array().size();
-		}
-
-		void push_back(Config value) {
 			as_array().push_back(std::move(value));
 		}
 
@@ -426,27 +461,31 @@ namespace configuru
 		}
 
 		const Config& operator[](const std::string& key) const;
+
+		// Prefer `obj.insert_or_assign(key, value);` to `obj[key] = value;` when inserting and performance is important!
 		Config& operator[](const std::string& key);
 
+		// For indexing with string literals:
+		template<std::size_t N>
+		Config& operator[](const char (&key)[N]) { return operator[](std::string(key)); }
+		template<std::size_t N>
+		const Config& operator[](const char (&key)[N]) const { return operator[](std::string(key)); }
+
 		bool has_key(const std::string& key) const;
+		size_t count(const std::string& key) const { return has_key(key) ? 1 : 0; }
 
 		void insert_or_assign(const std::string& key, Config&& config);
 
-		// Only for objects.
 		bool erase(const std::string& key);
 
 		template<typename T>
-		T get_or(const std::string& key, const T& default_value) const;
+		T get(const std::string& key) const
+		{
+			return as<T>((*this)[key]);
+		}
 
 		template<typename T>
-		T as_or(const T& default_value) const
-		{
-			if (_type == Uninitialized || _type == BadLookupType) {
-				return default_value;
-			} else {
-				return (T)*this;
-			}
-		}
+		T get_or(const std::string& key, const T& default_value) const;
 
 		std::string get_or(const std::string& key, const char* default_value) const
 		{
@@ -455,35 +494,28 @@ namespace configuru
 
 		// --------------------------------------------------------------------------------
 
+		// Compare Config values recursively.
 		static bool deep_eq(const Config& a, const Config& b);
 
-		// ----------------------------------------
-
+		// Copy this Config value recursively.
 		Config deep_clone() const;
 
 		// ----------------------------------------
 
-		// Will check for dangling (unaccessed) object keys recursively
+		// Will check for dangling (unaccessed) object keys recursively,
 		void check_dangling() const;
 
+		// Set the 'access' flag recursively,
 		void mark_accessed(bool v) const;
 
-		inline void check(bool b, const char* msg) const
-		{
-			if (!b) {
-				on_error(msg);
-			}
-		}
-
-		void assert_type(Type t) const;
-
-		const char* debug_descr() const;
+		// ----------------------------------------
 
 		bool has_comments() const
 		{
 			return _comments && !_comments->empty();
 		}
 
+		// Read/write of comments.
 		ConfigComments& comments()
 		{
 			if (!_comments) {
@@ -492,6 +524,7 @@ namespace configuru
 			return *_comments;
 		}
 
+		// Read comments.
 		const ConfigComments& comments() const
 		{
 			static const ConfigComments s_empty {};
@@ -502,15 +535,29 @@ namespace configuru
 			}
 		}
 
-	private:
-		void on_error(const std::string& msg) const CONFIGURU_NORETURN;
+		// Returns either "true", "false", the constained string, or the type name.
+		const char* debug_descr() const;
 
+		// Human-readable version of the type ("integer", "bool", etc).
 		static const char* type_str(Type t);
+
+		// ----------------------------------------
+		// Helper functions for checking the type is what we expect:
+
+		inline void check(bool b, const char* msg) const
+		{
+			if (!b) {
+				on_error(msg);
+			}
+		}
+
+		void assert_type(Type t) const;
+
+		void on_error(const std::string& msg) const CONFIGURU_NORETURN;
 
 	private:
 		void free();
 
-	private:
 		using ConfigComments_UP = std::unique_ptr<ConfigComments>;
 
 		Type  _type = Uninitialized;
@@ -527,7 +574,6 @@ namespace configuru
 
 		DocInfo_SP        _doc; // So we can name the file
 		unsigned          _line = (unsigned)-1; // Where in the source, or -1. Lines are 1-indexed.
-	public:
 		ConfigComments_UP _comments;
 	};
 
@@ -591,12 +637,12 @@ namespace configuru
 			ConfigObjectImpl::const_iterator _it;
 		};
 
-		iterator begin()  { return iterator{ _impl.begin() }; }
-		iterator end()    { return iterator{ _impl.end()   }; }
-		const_iterator begin() const { return const_iterator{ _impl.cbegin() }; }
-		const_iterator end()   const { return const_iterator{ _impl.cend()   }; }
-		const_iterator cbegin() const { return const_iterator{ _impl.cbegin() }; }
-		const_iterator cend()   const { return const_iterator{ _impl.cend()   }; }
+		iterator      begin()         { return iterator{_impl.begin()};        }
+		iterator      end()           { return iterator{_impl.end()};          }
+		const_iterator begin()  const { return const_iterator{_impl.cbegin()}; }
+		const_iterator end()    const { return const_iterator{_impl.cend()};   }
+		const_iterator cbegin() const { return const_iterator{_impl.cbegin()}; }
+		const_iterator cend()   const { return const_iterator{_impl.cend()};   }
 	};
 
 	// ------------------------------------------------------------------------
@@ -612,27 +658,26 @@ namespace configuru
 
 	// ------------------------------------------------------------------------
 
-	template<> inline bool                          Config::as() const { return as_bool();   }
-	template<> inline signed int                    Config::as() const { return as_integer<signed int>();         }
-	template<> inline unsigned int                  Config::as() const { return as_integer<unsigned int>();       }
-	template<> inline signed long                   Config::as() const { return as_integer<signed long>();        }
-	template<> inline unsigned long                 Config::as() const { return as_integer<unsigned long>();      }
-	template<> inline signed long long              Config::as() const { return as_integer<signed long long>();   }
-	template<> inline unsigned long long            Config::as() const { return as_integer<unsigned long long>(); }
-	template<> inline float                         Config::as() const { return as_float();  }
-	template<> inline double                        Config::as() const { return as_double(); }
-	template<> inline const std::string&            Config::as() const { return as_string(); }
-	template<> inline std::string                   Config::as() const { return as_string(); }
-	template<> inline const Config::ConfigArrayImpl& Config::as() const { return as_array();   }
-	// template<> inline std::vector<std::string>     Config::as() const { return as_vector<T>();   }
+	template<> inline bool                           Config::get() const { return as_bool();   }
+	template<> inline signed int                     Config::get() const { return as_integer<signed int>();         }
+	template<> inline unsigned int                   Config::get() const { return as_integer<unsigned int>();       }
+	template<> inline signed long                    Config::get() const { return as_integer<signed long>();        }
+	template<> inline unsigned long                  Config::get() const { return as_integer<unsigned long>();      }
+	template<> inline signed long long               Config::get() const { return as_integer<signed long long>();   }
+	template<> inline unsigned long long             Config::get() const { return as_integer<unsigned long long>(); }
+	template<> inline float                          Config::get() const { return as_float();  }
+	template<> inline double                         Config::get() const { return as_double(); }
+	template<> inline const std::string&             Config::get() const { return as_string(); }
+	template<> inline std::string                    Config::get() const { return as_string(); }
+	template<> inline const Config::ConfigArrayImpl& Config::get() const { return as_array();  }
+	// template<> inline std::vector<std::string>     Config::get() const { return as_vector<T>();   }
 
 	// ------------------------------------------------------------------------
 
 	template<typename T>
 	inline T as(const configuru::Config& config)
 	{
-		//return (T)config;
-		return config.as<T>();
+		return config.get<T>();
 	}
 
 	template<typename T>
@@ -645,7 +690,7 @@ namespace configuru
 		} else {
 			const auto& entry = it->second;
 			entry._accessed = true;
-			return configuru::as<T>(entry._value);
+			return as<T>(entry._value);
 		}
 	}
 
@@ -691,7 +736,7 @@ namespace configuru
 	{
 		if (dst.is_object() && src.is_object()) {
 			for (auto&& p : src.as_object()) {
-				merge_replace(dst[p.first], src.second.entry);
+				merge_replace(dst[p.key()], p.value());
 			}
 		} else {
 			dst = src;
@@ -705,7 +750,7 @@ namespace configuru
 	{
 	public:
 		ParseError(const DocInfo_SP& doc, unsigned line, unsigned column, const std::string& msg)
-		: _line(line), _column(column)
+			: _line(line), _column(column)
 		{
 			_what = doc->filename + ":" + std::to_string(line) + ":" + std::to_string(column);
 			doc->append_include_info(_what);
@@ -735,7 +780,7 @@ namespace configuru
 		   multiple spaces or an empty string.
 		   An empty string means the output will be compact. */
 		std::string indentation              = "\t";
-		bool        enforce_indentation      = true;  // Must indent with tabs?
+		bool        enforce_indentation      = true;  // Must have correct indentation?
 
 		// Top file:
 		bool        empty_file               = false; // If true, an empty file is an empty object.
@@ -913,9 +958,10 @@ namespace configuru
 	Config parse_file(const std::string& path, const FormatOptions& options, DocInfo_SP doc, ParseInfo& info);
 
 	// ----------------------------------------------------------
-	// Writes in a pretty format with perfect reversibility of everything (including numbers).
+	// Writes the config as a string in the given format.
 	std::string dump_string(const Config& config, const FormatOptions& options);
 
+	// Writes the config to a file.
 	void dump_file(const std::string& path, const Config& config, const FormatOptions& options);
 } // namespace configuru
 
@@ -1285,16 +1331,9 @@ namespace configuru
 
 	const char* Config::debug_descr() const {
 		switch (_type) {
-			case Uninitialized: return "uninitialized";
-			case BadLookupType: return "undefined";
-			case Null:          return "null";
-			case Bool:          return _u.b ? "true" : "false";
-			case Int:           return "integer";
-			case Float:         return "float";
-			case String:        return _u.str->c_str();
-			case Array:         return "array";
-			case Object:        return "object";
-			default:            return "BROKEN Config";
+			case Bool:   return _u.b ? "true" : "false";
+			case String: return _u.str->c_str();
+			default:     return type_str(_type);
 		}
 	}
 
@@ -1847,7 +1886,9 @@ namespace configuru
 		if (!is_object && ret.array_size() == 0) {
 			if (_options.empty_file) {
 				auto empty_object = Config::object();
-				empty_object._comments = std::move(ret._comments);
+				if (ret.has_comments()) {
+					empty_object.comments() = std::move(ret.comments());
+				}
 				return empty_object;
 			} else {
 				throw_error("Empty file");

@@ -1,6 +1,6 @@
 Configuru
 =========
-Configuru, an experimental config library for C++, by Emil Ernerfeldt.
+Configuru, an experimental JSON config library for C++, by Emil Ernerfeldt.
 
 License
 -------
@@ -13,17 +13,26 @@ If you find this library useful, tweet me at @ernerfeldt mail me at emil.ernerfe
 
 Overview
 --------
-Config read/write. The format is a form of simplified JSON.
-This config library is unique in a few ways:
+Configuru is a JSON parser/writer for C++11. Configuru was written for human created/edited config files and therefore prioritizes helpful error messages over parse speed.
 
-* Indentation/style must be correct in input.
-* Round-trip parse/write of comments.
-* Novel(?) method for finding typos in config files:
-	When reading a config, "forgotten" keys are warned about. For instance:
+Goals
+-----
+* Debugable:
+	* Find typos most config libs miss (like typos in keys).
+	* Cleverly help to point out mismatched braces in the right place.
+	* Easily find source of typos with line numbers and helpful error messages.
+* Configurable:
+	* Allow comments in configs.
+	* Pretty printing.
+	* Extensible.
+* Easy to use:
+	* Smooth C++11 integration for reading and creating config values.
+* JSON compliant:
+	* Configuru has one of the highest conformance ratings on [Native JSON Benchmark](https://github.com/miloyip/nativejson-benchmark)
 
-		auto cfg = configuru::parse_string("colour = [1,1,1]");
-		auto color = cfg.get_or("color", Color(0, 0, 0));
-		cfg.check_dangling(); // Will warn about how we never read "colour",
+Non-goals
+---------
+* Low overhead
 
 Error messages
 --------------
@@ -72,32 +81,53 @@ Here's some use errors and their error messages:
 
 	auto b = (bool)config["pi"];
 
-*config.json:2: Expected bool, got float*. Note that the file:line points to where the value is defined.
+`config.json:2: Expected bool, got float`. Note that the file:line points to where the value is defined.
 
 	std::cout << (float)config["obj"]["does_not_exist"];
 
-*config.json:4: Failed to find key 'does_not_exist'*. Here the file and line of the owner (`"obj"`) of the missing value is referenced.
+`config.json:4: Failed to find key 'does_not_exist'`. Here the file and line of the owner (`"obj"`) of the missing value is referenced.
 
 	std::cout << (float)config["pi"][5];
 
-*config.json:2: Expected array, got float*.
+`config.json:2: Expected array, got float`.
 
 	std::cout << (float)config["array"][5];
 
-*config.json:3: Array index out of range*
+`config.json:3: Array index out of range`
 
 	Config cfg;
 	cfg["hello"] = 42;
 
-*Expected object, got uninitialized. Did you forget to call Config::object()?*
+`Expected object, got uninitialized. Did you forget to call Config::object()?`
 
 	Config cfg;
 	cfg.push_back("hello");
 
-*Expected array, got uninitialized. Did you forget to call Config::array()?*
+`Expected array, got uninitialized. Did you forget to call Config::array()?`
 
-Usage (general):
-----------------
+### Unused keys
+Configuru has a novel mechanism for detecting subtle typos in object keys. Let say you have a Config that looks like this:
+
+	{
+		"colour": [1, 1, 1],
+		...
+	}
+
+Here's how it could be used:
+
+	auto cfg = configuru::parse_file("colour = [1,1,1]");
+	auto color = cfg.get_or("color", Color(0, 0, 0)); // Oops, typo!
+	cfg.check_dangling();
+
+The call to `check_dangling` will print a warning:
+
+	config.json:2: Key 'colour' never accessed
+
+This is very helpful for finding subtle mistakes. The call to `check_dangling` is recursive, so you only need to call it once for every config file.
+
+
+Usage (general)
+---------------
 For using:
 	`#include <configuru.hpp>`
 
@@ -106,10 +136,10 @@ And in one .cpp file:
 	#define CONFIGURU_IMPLEMENTATION 1
 	#include <configuru.hpp>
 
-Usage (parsing):
-----------------
+Usage (parsing)
+---------------
 
-	Config cfg = configuru::parse_file("input.json");
+	Config cfg = configuru::parse_file("input.json", configuru::JSON);
 	float alpha = (float)cfg["alpha"];
 	if (cfg.has_key("beta")) {
 		std::string beta = (std::string)cfg["beta"];
@@ -118,7 +148,7 @@ Usage (parsing):
 
 	const auto& array = cfg["array"];
 	if (cfg["array"].is_array()) {
-		std::cout << "First element: " << cfg["array"][0u];
+		std::cout << "First element: " << cfg["array"][0];
 		for (const Config& element : cfg["array"].as_array()) {
 			std::cout << element << std::endl;
 		}
@@ -149,27 +179,8 @@ Usage (writing):
 	};
 	write_file("output.cfg", cfg);
 
-Goals:
-========
-* Debugable:
-	* Find typos most config libs miss (typos in keys).
-	* Cleverly help to point out mismatched braces in the right place.
-	* Easily find source of typos with line numbers and helpful error messages.
-* Configurable:
-* Allow comments in configs.
-* Pretty printing.
-* Extensible.
-
-# Non-goals:
-* Low overhead
-
-# TODO:
-* Code cleanup.
-* Dissallow having commas for just some entries in an array or object.
-
-
-Config format
--------------
+CFG format
+----------
 
 Like JSON, but with simplifications. Example file:
 
@@ -253,3 +264,8 @@ Note how Configuru refrains from unnecessary line breaks on short arrays and doe
 		[ "two" "things" ]
 		"three"
 	]
+
+
+TODO:
+-----
+* Dissallow having commas for just some entries in an array or object.
