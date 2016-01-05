@@ -581,6 +581,48 @@ void test_comments()
 void test_conversions()
 {
 	LOG_SCOPE_FUNCTION(0);
+
+	Config cfg = {
+		{ "bool",        true     },
+		{ "int",         42       },
+		{ "float",        2.75f   },
+		{ "double",       3.14    },
+		{ "string",      "Hello!" },
+		{ "mixed_array", { nullptr, 1, "two" } }
+	};
+
+	auto explicit_bool = (bool)cfg["bool"];
+	CHECK_EQ_F(explicit_bool, true);
+	auto explicit_int = (int)cfg["int"];
+	CHECK_EQ_F(explicit_int, 42);
+	auto explicit_float = (float)cfg["float"];
+	CHECK_EQ_F(explicit_float, 2.75f);
+	auto explicit_double = (double)cfg["double"];
+	CHECK_EQ_F(explicit_double, 3.14);
+	auto explicit_string = (std::string)cfg["string"];
+	CHECK_EQ_F(explicit_string, "Hello!");
+	auto explicit_mixed_array = (std::vector<Config>)cfg["mixed_array"];
+	CHECK_F(explicit_mixed_array[0] == nullptr);
+	CHECK_F(explicit_mixed_array[1] == 1);
+	CHECK_F(explicit_mixed_array[2] == "two");
+
+#if CONFIGURU_IMPLICIT_CONVERSIONS
+	bool implicit_bool; implicit_bool = cfg["bool"];
+	CHECK_EQ_F(implicit_bool, true);
+	int implicit_int; implicit_int = cfg["int"];
+	CHECK_EQ_F(implicit_int, 42);
+	float implicit_float; implicit_float = cfg["float"];
+	CHECK_EQ_F(implicit_float, 2.75f);
+	double implicit_double; implicit_double = cfg["double"];
+	CHECK_EQ_F(implicit_double, 3.14);
+	std::string implicit_string; implicit_string = cfg["string"];
+	CHECK_EQ_F(implicit_string, "Hello!");
+	std::vector<Config> implicit_mixed_array; implicit_mixed_array = cfg["mixed_array"];
+	CHECK_F(implicit_mixed_array[0] == nullptr);
+	CHECK_F(implicit_mixed_array[1] == 1);
+	CHECK_F(implicit_mixed_array[2] == "two");
+#endif
+
 	auto parse_json = [](const std::string& json) {
 		return configuru::parse_string(json.c_str(), JSON, "");
 	};

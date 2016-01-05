@@ -109,21 +109,21 @@ Here's some use errors and their error messages:
 Configuru has a novel mechanism for detecting subtle typos in object keys. Let say you have a Config that looks like this:
 
 	{
-		"colour": [1, 1, 1],
+		"colour": "red",
 		...
 	}
 
 Here's how it could be used:
 
-	auto cfg = configuru::parse_file("colour = [1,1,1]");
-	auto color = cfg.get_or("color", Color(0, 0, 0)); // Oops, typo!
+	auto cfg = configuru::parse_file("config.json", configuru::JSON);
+	auto color = cfg.get_or("color", DEFAULT_COLOR);
 	cfg.check_dangling();
 
 The call to `check_dangling` will print a warning:
 
 	config.json:2: Key 'colour' never accessed
 
-This is very helpful for finding subtle mistakes. The call to `check_dangling` is recursive, so you only need to call it once for every config file.
+This is very helpful for finding subtle mistakes. The call to `check_dangling` is recursive, so you only need to call it once for every config file. If you want to mute warning for some key (which you may intentiallly be ignoring, or saving for later) you can call `cfg.mark_checed(true)`.
 
 
 Usage (general)
@@ -194,8 +194,7 @@ Like JSON, but with simplifications. Example file:
 
 * Top-level can be key-value pairs, or a value.
 * Keys need not be quoted if identifiers.
-* Key-value pairs need not be separated with ,
-* Array values need not be separated with ,
+* Commas optional for arrays and objects.
 * Trailing , allowed in arrays and objects.
 
 """ starts a verbatim multiline string

@@ -70,7 +70,6 @@ Usage (writing):
 	};
 	dump_file("output.cfg", cfg);
 
-
 CFG format
 ----------
 
@@ -138,6 +137,14 @@ Tabs anywhere else is not allowed.
 #endif // CONFIGURU_ON_DANGLING
 
 #define CONFIGURU_NORETURN __attribute__((noreturn))
+
+#ifndef CONFIGURU_IMPLICIT_CONVERSIONS
+	#define CONFIGURU_IMPLICIT_CONVERSIONS 0
+#endif
+
+#define CONFIGURU_NORETURN __attribute__((noreturn))
+
+#undef check // Needed on OSX
 
 namespace configuru
 {
@@ -322,6 +329,49 @@ namespace configuru
 		// ----------------------------------------
 		// Convertors:
 
+#if CONFIGURU_IMPLICIT_CONVERSIONS
+		// Explicit casting, for overloads of as<T>
+		template<typename T>
+		explicit operator T() const { return as<T>(*this); }
+
+		inline operator bool()                    const { return as_bool();   }
+		inline operator signed char()             const { return as_integer<signed char>();         }
+		inline operator unsigned char()           const { return as_integer<unsigned char>();       }
+		inline operator signed short()            const { return as_integer<signed short>();         }
+		inline operator unsigned short()          const { return as_integer<unsigned short>();       }
+		inline operator signed int()              const { return as_integer<signed int>();         }
+		inline operator unsigned int()            const { return as_integer<unsigned int>();       }
+		inline operator signed long()             const { return as_integer<signed long>();        }
+		inline operator unsigned long()           const { return as_integer<unsigned long>();      }
+		inline operator signed long long()        const { return as_integer<signed long long>();   }
+		inline operator unsigned long long()      const { return as_integer<unsigned long long>(); }
+		inline operator float()                   const { return as_float();  }
+		inline operator double()                  const { return as_double(); }
+		inline operator std::string()             const { return as_string(); }
+		inline operator Config::ConfigArrayImpl() const { return as_array();  }
+
+		// Convenience:
+		template<typename T>
+		operator std::vector<T>() const
+		{
+			const auto& array = as_array();
+			std::vector<T> ret;
+			ret.reserve(array.size());
+			for (auto&& config : array) {
+				ret.push_back((T)config);
+			}
+			return ret;
+		}
+
+		// Convenience: TODO: generalize for tuples.
+		template<typename Left, typename Right>
+		operator std::pair<Left, Right>() const
+		{
+			const auto& array = as_array();
+			check(array.size() == 2u, "Mismatched array length.");
+			return {(Left)array[0], (Right)array[1]};
+		}
+#else
 		// Explicit casting, since C++ handles implicit casts real badly.
 		template<typename T>
 		explicit operator T() const { return as<T>(*this); }
@@ -347,6 +397,7 @@ namespace configuru
 			check(array.size() == 2u, "Mismatched array length.");
 			return {(Left)array[0], (Right)array[1]};
 		}
+#endif
 
 		const std::string& as_string() const { assert_type(String); return *_u.str; }
 		const char* c_str() const { assert_type(String); return _u.str->c_str(); }
@@ -632,7 +683,6 @@ namespace configuru
 			const std::string& key()   const { return _it->first;         }
 			const Config&      value() const { return _it->second._value; }
 
-
 		private:
 			ConfigObjectImpl::const_iterator _it;
 		};
@@ -659,6 +709,10 @@ namespace configuru
 	// ------------------------------------------------------------------------
 
 	template<> inline bool                           Config::get() const { return as_bool();   }
+	template<> inline signed char                    Config::get() const { return as_integer<signed char>();         }
+	template<> inline unsigned char                  Config::get() const { return as_integer<unsigned char>();       }
+	template<> inline signed short                   Config::get() const { return as_integer<signed short>();         }
+	template<> inline unsigned short                 Config::get() const { return as_integer<unsigned short>();       }
 	template<> inline signed int                     Config::get() const { return as_integer<signed int>();         }
 	template<> inline unsigned int                   Config::get() const { return as_integer<unsigned int>();       }
 	template<> inline signed long                    Config::get() const { return as_integer<signed long>();        }
@@ -716,9 +770,9 @@ namespace configuru
 		}
 	}
 
-	inline void clear_doc(Config& config) // TODO: shouldn't be needed. Replace with some info of wether a Config is the root of the document it is in.
+	inline void clear_doc(Config& root) // TODO: shouldn't be needed. Replace with some info of wether a Config is the root of the document it is in.
 	{
-		visit_configs(config, [&](Config& config){ config.set_doc(nullptr); });
+		visit_configs(root, [&](Config& cfg){ cfg.set_doc(nullptr); });
 	}
 
 	/*
@@ -973,7 +1027,6 @@ namespace configuru
 // 88 88YbdP88 88"""  88  .o 88""   88YbdP88 88""   88 Y88   88    dP__Yb    88   88 Yb   dP 88 Y88
 // 88 88 YY 88 88     88ood8 888888 88 YY 88 888888 88  Y8   88   dP""""Yb   88   88  YbodP  88  Y8
 
-
 /* In one of your .cpp files you need to do the following:
 #define CONFIGURU_IMPLEMENTATION
 #include <configuru.hpp>
@@ -1007,8 +1060,8 @@ namespace configuru
 		std::string           key;
 		std::atomic<unsigned> _ref_count { 1 };
 
-		BadLookupInfo(DocInfo_SP doc, unsigned line, std::string key)
-			: doc(std::move(doc)), line(line), key(std::move(key)) {}
+		BadLookupInfo(DocInfo_SP doc_, unsigned line_, std::string key_)
+			: doc(std::move(doc_)), line(line_), key(std::move(key_)) {}
 	};
 
 	Config::Config(const char* str) : _type(String)
@@ -1424,7 +1477,6 @@ namespace configuru
 	}
 }
 
-
 // ----------------------------------------------------------------------------
 // 88""Yb    db    88""Yb .dP"Y8 888888 88""Yb
 // 88__dP   dPYb   88__dP `Ybo." 88__   88__dP
@@ -1605,7 +1657,7 @@ namespace configuru
 			return p;
 		}
 
-		void throw_error(const std::string& desc) {
+		void throw_error(const std::string& desc) CONFIGURU_NORETURN {
 			const char* sol = start_of_line();
 			const char* eol = end_of_line();
 			std::string orientation;
@@ -2559,7 +2611,6 @@ namespace configuru
 	}
 }
 
-
 // ----------------------------------------------------------------------------
 // Yb        dP 88""Yb 88 888888 888888 88""Yb
 //  Yb  db  dP  88__dP 88   88   88__   88__dP
@@ -2782,7 +2833,7 @@ namespace configuru
 					_out += " ";
 				} else {
 					_out += ": ";
-					for (size_t i=it->first.size(); i<longest_key; ++i) {
+					for (size_t j=it->first.size(); j<longest_key; ++j) {
 						_out += " ";
 					}
 				}
