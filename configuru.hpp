@@ -110,10 +110,12 @@ Tabs anywhere else is not allowed.
 #ifndef CONFIGURU_HEADER_HPP
 #define CONFIGURU_HEADER_HPP
 
+#include <atomic>
 #include <cmath>
 #include <initializer_list>
 #include <iterator>
 #include <map>
+#include <memory>
 #include <ostream>
 #include <stdexcept>
 #include <string>
@@ -144,6 +146,7 @@ Tabs anywhere else is not allowed.
 
 #define CONFIGURU_NORETURN __attribute__((noreturn))
 
+#undef Bool // Needed on Ubuntu 14.04 with GCC 4.8.5
 #undef check // Needed on OSX
 
 namespace configuru
@@ -268,6 +271,26 @@ namespace configuru
 			Config object{{"name", "Emil"}, {"age", 30}};
 		*/
 		Config(std::initializer_list<Config> values);
+
+		template<typename T>
+		Config(const std::vector<T>& values) : _type(Uninitialized)
+		{
+			make_array();
+			for (const auto& v : values)
+			{
+				push_back(v);
+			}
+		}
+
+		template<typename T>
+		Config(const std::map<std::string, T>& values) : _type(Uninitialized)
+		{
+			make_object();
+			for (const auto& p : values)
+			{
+				(*this)[p.first] = p.second;
+			}
+		}
 
 		// Used by the parser - no need to use directly.
 		void make_object();
@@ -646,12 +669,12 @@ namespace configuru
 			}
 
 			iterator& operator++() {
-			    ++_it;
-			    return *this;
+				++_it;
+				return *this;
 			}
 
 			friend bool operator!=(const iterator& a, const iterator& b) {
-			    return a._it != b._it;
+				return a._it != b._it;
 			}
 
 			const std::string& key()   const { return _it->first;         }
@@ -672,12 +695,12 @@ namespace configuru
 			}
 
 			const_iterator& operator++() {
-			    ++_it;
-			    return *this;
+				++_it;
+				return *this;
 			}
 
 			friend bool operator!=(const const_iterator& a, const const_iterator& b) {
-			    return a._it != b._it;
+				return a._it != b._it;
 			}
 
 			const std::string& key()   const { return _it->first;         }
@@ -2721,7 +2744,7 @@ namespace configuru
 				_out += ((bool)config ? "true" : "false");
 			} else if (config.is_int()) {
 				char temp_buff[64];
-				snprintf(temp_buff, sizeof(temp_buff), "%lld", (int64_t)config);
+				snprintf(temp_buff, sizeof(temp_buff), "%ld", (int64_t)config);
 				_out += temp_buff;
 			} else if (config.is_float()) {
 				write_number( (double)config );
@@ -2872,7 +2895,7 @@ namespace configuru
 			auto as_int = (int64_t)val;
 			if ((double)as_int == val) {
 				char temp_buff[64];
-				snprintf(temp_buff, sizeof(temp_buff), "%lld", as_int);
+				snprintf(temp_buff, sizeof(temp_buff), "%ld", as_int);
 				_out += temp_buff;
 				if (_options.distinct_floats) {
 					_out += ".0";
