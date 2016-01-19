@@ -14,7 +14,7 @@ and modify this file as you see fit.
 That being said, I would appreciate credit!
 If you find this library useful, tweet me @ernerfeldt or mail me at emil.ernerfeldt@gmail.com.
 
-Usage (general):
+Getting started:
 ----------------
 For using:
 	`#include <configuru.hpp>`
@@ -24,82 +24,7 @@ And in one .cpp file:
 	#define CONFIGURU_IMPLEMENTATION 1
 	#include <configuru.hpp>
 
-Usage (parsing):
-----------------
-
-	Config cfg = configuru::parse_file("input.json",  configuru::JSON);
-	float alpha = (float)cfg["alpha"];
-	if (cfg.has_key("beta")) {
-		std::string beta = (std::string)cfg["beta"];
-	}
-	float pi = cfg.get_or(pi, 3.14f);
-
-	const auto& array = cfg["array"];
-	if (cfg["array"].is_array()) {
-		std::cout << "First element: " << cfg["array"][0];
-		for (const Config& element : cfg["array"].as_array()) {
-			std::cout << element << std::endl;
-		}
-	}
-
-	for (auto& p : cfg["object"].as_object()) {
-		std::cout << "Key: "   << p.key() << std::endl;
-		std::cout << "Value: " << p.value();
-		p.value() = "new value";
-	}
-
-	cfg.check_dangling(); // Make sure we haven't forgot reading a key!
-
-	// You can modify the read config:
-	cfg["message"] = "goodbye";
-
-	dump_file("output.cfg", cfg); // Will include comments in the original.
-
-	Note: all conversions from Config must be explicit.
-	This is because how C++ handles implicit conversions is inherently dangerous.
-
-Usage (writing):
-----------------
-
-	Config cfg = Config::object();
-	cfg["pi"]     = 3.14;
-	cfg["array"]  = { 1, 2, 3 };
-	cfg["object"] = {
-		{ "key1", "value1" },
-		{ "key2", "value2" },
-	};
-	dump_file("output.cfg", cfg);
-
-CFG format
-----------
-
-Like JSON, but with simplifications. Example file:
-
-	values: [1 2 3 4 5 6]
-	object: {
-		nested_key: +inf
-	}
-	python_style: """This is a string
-					 which spans many lines."""
-	"C# style": @"Also nice for \ and stuff"
-
-* Top-level can be key-value pairs, or a value.
-* Keys need not be quoted if identifiers.
-* Key-value pairs need not be separated with ,
-* Array values need not be separated with ,
-* Trailing , allowed in arrays and objects.
-
-""" starts a verbatim multiline string
-
-@" starts a C# style verbatim string which ends on next quote (except "" which is a single-quote).
-
-Numbers can be represented in any common form:
-42, 1e-32, 0xCAFE, 0b1010
-
-+inf, -inf, +NaN are valid numbers
-
-Indentation is enforced, and must be done with tabs.
-Tabs anywhere else is not allowed.
+For more info, please se README.md (at www.github.com/emilk/configuru).
 */
 
 //  dP""b8  dP"Yb  88b 88 888888 88  dP""b8 88   88 88""Yb 88   88
