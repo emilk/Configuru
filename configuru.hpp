@@ -344,14 +344,15 @@ namespace configuru
 
 		Type type() const { return _type; }
 
-		bool is_null()   const { return _type    == Null;       }
-		bool is_bool()   const { return _type    == Bool;       }
-		bool is_int()    const { return _type    == Int;        }
-		bool is_float()  const { return _type    == Float;      }
-		bool is_string() const { return _type    == String;     }
-		bool is_object() const { return _type    == Object;     }
-		bool is_array()  const { return _type    == Array;      }
-		bool is_number() const { return is_int() || is_float(); }
+		bool is_uninitialized() const { return _type == Uninitialized;    }
+		bool is_null()          const { return _type == Null;             }
+		bool is_bool()          const { return _type == Bool;             }
+		bool is_int()           const { return _type == Int;              }
+		bool is_float()         const { return _type == Float;            }
+		bool is_string()        const { return _type == String;           }
+		bool is_object()        const { return _type == Object;           }
+		bool is_array()         const { return _type == Array;            }
+		bool is_number()        const { return is_int() || is_float();    }
 
 		// Returns file:line iff available.
 		std::string where() const;
@@ -791,7 +792,7 @@ namespace configuru
 
 	// ------------------------------------------------------------------------
 
-	// Prints as JSON.
+	// Prints in JSON but in a fail-safe mannor, allowing uninitalized keys and inf/nan.
 	std::ostream& operator<<(std::ostream& os, const Config& cfg);
 
 	// ------------------------------------------------------------------------
@@ -922,6 +923,9 @@ namespace configuru
 
 		// Sort keys lexicographically. If false, sort by order they where added.
 		bool        sort_keys                = false;
+
+		// When printing, write uninitialized values as UNINITIALIZED. Useful for debugging.
+		bool        write_uninitialized      = false;
 
 		bool compact() const { return indentation.empty(); }
 	};
@@ -1054,9 +1058,13 @@ namespace configuru
 
 	// ----------------------------------------------------------
 	// Writes the config as a string in the given format.
+	// May call CONFIGURU_ONERROR if the given config is invalid. This can happen if
+	// a Config is unitialized (and options write_uninitialized is not set) or
+	// a Config contains inf/nan (and options.inf/options.nan aren't set).
 	std::string dump_string(const Config& config, const FormatOptions& options);
 
-	// Writes the config to a file.
+	// Writes the config to a file. Like dump_string, but can may also call CONFIGURU_ONERROR
+	// if it fails to write to the given path.
 	void dump_file(const std::string& path, const Config& config, const FormatOptions& options);
 } // namespace configuru
 
@@ -1538,7 +1546,12 @@ namespace configuru
 
 	std::ostream& operator<<(std::ostream& os, const Config& cfg)
 	{
-		return os << dump_string(cfg, JSON);
+		auto format = JSON;
+		// Make sure that all config types are serializable:
+		format.inf                 = true;
+		format.nan                 = true;
+		format.write_uninitialized = true;
+		return os << dump_string(cfg, format);
 	}
 }
 
@@ -2854,7 +2867,11 @@ namespace configuru
 					_out += "}";
 				}
 			} else {
-				throw std::runtime_error("Cannot serialize Config");
+				if (_options.write_uninitialized) {
+					_out += "UNINITIALIZED";
+				} else {
+					CONFIGURU_ONERROR("Failed to serialize uninitialized Config");
+				}
 			}
 
 			if (write_postfix) {

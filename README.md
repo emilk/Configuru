@@ -22,9 +22,9 @@ Goals
 	* Cleverly help to point out mismatched braces in the right place.
 	* Easily find source of typos with line numbers and helpful error messages.
 * Configurable:
-	* Allow comments in configs.
+	* Configure the format to allow different, relaxed, flavors of JSON.
 	* Pretty printing.
-	* Extensible.
+	* Extensible with custom conversions.
 * Easy to use:
 	* Smooth C++11 integration for reading and creating config values.
 * JSON compliant:
