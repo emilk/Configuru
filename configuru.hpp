@@ -2786,7 +2786,7 @@ namespace configuru
 				_out += ((bool)config ? "true" : "false");
 			} else if (config.is_int()) {
 				char temp_buff[64];
-				snprintf(temp_buff, sizeof(temp_buff), "%ld", (int64_t)config);
+				snprintf(temp_buff, sizeof(temp_buff), "%lld", (long long)config);
 				_out += temp_buff;
 			} else if (config.is_float()) {
 				write_number( (double)config );
@@ -2934,10 +2934,10 @@ namespace configuru
 				return;
 			}
 
-			auto as_int = (int64_t)val;
+			auto as_int = (long long)val;
 			if ((double)as_int == val) {
 				char temp_buff[64];
-				snprintf(temp_buff, sizeof(temp_buff), "%ld", as_int);
+				snprintf(temp_buff, sizeof(temp_buff), "%lld", as_int);
 				_out += temp_buff;
 				if (_options.distinct_floats) {
 					_out += ".0";
