@@ -19,6 +19,13 @@ namespace fs = boost::filesystem;
 const std::string PASS_STRING = (std::string)loguru::terminal_green() + "PASS: " + loguru::terminal_reset();
 const std::string FAIL_STRING = (std::string)loguru::terminal_red()   + "FAIL: " + loguru::terminal_reset();
 
+using Config        = configuru::Config;
+using FormatOptions = configuru::FormatOptions;
+const auto JSON     = configuru::JSON;
+const auto CFG      = configuru::CFG;
+
+using KV = configuru::KV;
+
 struct Tester
 {
 	size_t num_run    = 0;
@@ -493,24 +500,25 @@ void create()
 
 	// add another object (using an initializer_list of pairs)
 	cfg["object"] = {
-		{ "currency", "USD" },
-		{ "value",    42.99 }
+		KV{ "currency", "USD" },
+		KV{ "value",    42.99 }
 	};
 
 	// instead, you could also write (which looks very similar to the JSON above)
 	const configuru::Config cfg2 = {
-		{ "pi",      3.141   },
-		{ "happy",   true    },
-		{ "name",    "Emil"  },
-		{ "nothing", nullptr },
-		{ "answer",  {
-			{ "everything", 42 }
+		KV{ "pi",      3.141   },
+		KV{ "happy",   true    },
+		KV{ "name",    "Emil"  },
+		KV{ "nothing", nullptr },
+		KV{ "answer",  {
+			KV{ "everything", 42 }
 		} },
-		{ "array",   { 1, 0, 2 } },
-		{ "object",  {
-			{ "currency", "USD" },
-			{ "value",    42.99 }
-		} }
+		KV{ "array",   { 1, 0, 2 } },
+		KV{ "array",   { 1, 0, 2 } },
+		KV{ "object",  {
+			KV{ "currency", "USD" },
+			KV{ "value",    42.99 }
+		} },
 	};
 
 	std::cout << "cfg:\n"  << cfg  << std::endl;
@@ -571,8 +579,8 @@ void test_comments()
 
 	Config rearranged = data;
 	rearranged["indent"] = {
-		{ "array",  data["array"],  },
-		{ "object", data["object"], },
+		KV{ "array",  data["array"],  },
+		KV{ "object", data["object"], },
 	};
 	rearranged.erase("object");
 	rearranged.erase("array");
@@ -584,12 +592,12 @@ void test_conversions()
 	LOG_SCOPE_FUNCTION(0);
 
 	Config cfg = {
-		{ "bool",        true     },
-		{ "int",         42       },
-		{ "float",        2.75f   },
-		{ "double",       3.14    },
-		{ "string",      "Hello!" },
-		{ "mixed_array", { nullptr, 1, "two" } }
+		KV{ "bool",        true     },
+		KV{ "int",         42       },
+		KV{ "float",        2.75f   },
+		KV{ "double",       3.14    },
+		KV{ "string",      "Hello!" },
+		KV{ "mixed_array", { nullptr, 1, "two" } }
 	};
 
 	auto explicit_bool = (bool)cfg["bool"];
@@ -651,7 +659,7 @@ void test_copy_semantics()
 {
     LOG_F(INFO, "test_copy_semantics...");
     Config original{
-        { "key", "original_value" }
+        KV{ "key", "original_value" }
     };
     CHECK_F(original["key"] == "original_value");
     Config copy = original;
@@ -682,9 +690,16 @@ int main(int argc, char* argv[])
 		{"long_array",  {"one", {"two", "things"}, "three"}}, \
 	}
 
+#define EXAMPLE_JSON_KV {                                       \
+		KV{"float",       3.14f},                               \
+		KV{"double",      3.14},                                \
+		KV{"short_array", {1, 2, 3}},                           \
+		KV{"long_array",  {"one", {"two", "things"}, "three"}}, \
+	}
+
 	std::cout << "nlohmann: \n"       << nlohmann::json(EXAMPLE_JSON).dump(4) << std::endl;
-	std::cout << "configuru JSON: \n" << configuru::dump_string(EXAMPLE_JSON, JSON) << std::endl;
-	std::cout << "configuru CFG: \n"  << configuru::dump_string(EXAMPLE_JSON, CFG)  << std::endl;
+	std::cout << "configuru JSON: \n" << configuru::dump_string(EXAMPLE_JSON_KV, JSON) << std::endl;
+	std::cout << "configuru CFG: \n"  << configuru::dump_string(EXAMPLE_JSON_KV, CFG)  << std::endl;
 
 	run_unit_tests();
     test_copy_semantics();

@@ -187,7 +187,7 @@ You can control this behavior with `#define CONFIGURU_VALUE_SEMANTICS 1`:
 	#define CONFIGURU_VALUE_SEMANTICS 1
 	#include <configuru.hpp>
 	...
-	Config cfg{{"message", "original"}};
+	Config cfg{KV{"message", "original"}};
 	auto deep_clone = cfg;
 	cfg["message"] = "changed!";
 	std::cout << deep_clone["message"]; // Will print "original";
@@ -199,16 +199,21 @@ The default behavior of Configuru is to throw a `std::runtime_error` on any erro
 Usage (writing):
 -------------------------------------------------------------------------------
 
-	Config cfg = Config::new_object();
+	#include <configuru.hpp>
+	using KV = configuru::KV;
+	...
+	auto cfg = configuru::Config::object();
 	cfg["pi"]     = 3.14;
 	cfg["array"]  = { 1, 2, 3 };
 	cfg["object"] = {
-		{ "key1", "value1" },
-		{ "key2", "value2" },
+		KV{ "key1", "value1" },
+		KV{ "key2", "value2" },
 	};
-
+    
 	std::string json = dump_string(cfg, JSON);
 	dump_file("output.cfg", cfg, JSON);
+
+`KV` stands for Key/Value and are there to distinguish between arrays and objects.
 
 CFG format
 ===============================================================================
@@ -246,10 +251,10 @@ Beautiful output
 One of the great things about JSON is that it is human readable (as opposed to XML). Configuru goes to great lengths to make the output as readable as possible. Here's an example structure (as defined in C++):
 
 	Config cfg{
-		{"float",       3.14f},
-		{"double",      3.14},
-		{"short_array", {1, 2, 3}},
-		{"long_array",  {"one", {"two", "things"}, "three"}},
+		KV{"float",       3.14f},
+		KV{"double",      3.14},
+		KV{"short_array", {1, 2, 3}},
+		KV{"long_array",  {"one", {"two", "things"}, "three"}},
 	};
 
 Here's how the output turns out in most JSON encoders (this one produced by the excellent [nlohmann json library](https://github.com/nlohmann/json)):
@@ -295,15 +300,3 @@ Note how Configuru refrains from unnecessary line breaks on short arrays and doe
 		[ "two" "things" ]
 		"three"
 	]
-
-
-TODO:
-===============================================================================
-* Consider prettifying how objects are defined in C++ using a `KV` (key-value) function/class:
-
-	configuru::Config cfg{
-		KV{"float",       3.14f},
-		KV{"double",      3.14},
-		KV{"short_array", {1, 2, 3}},
-		KV{"long_array",  {"one", {"two", "things"}, "three"}},
-	};

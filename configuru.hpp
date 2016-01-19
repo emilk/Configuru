@@ -148,6 +148,17 @@ namespace configuru
 	template<typename T>
 	inline T as(const configuru::Config& config);
 
+	template<typename ValueType>
+	struct KeyValue
+	{
+		KeyValue(std::string k, ValueType v)
+			: key(std::move(k)), value(std::move(v))
+		{ }
+
+		std::string key;
+		ValueType   value;
+	};
+
 	/*
 	 A dynamic config variable.
 	 Acts like something out of Python or Lua.
@@ -198,12 +209,18 @@ namespace configuru
 		Config(const char* str);
 		Config(std::string str);
 
-		/*
-		If the given values are stirng-value pairs, it is assumed to be an object, else an array.
+		/* Construct an array:
 			Config array{1, 2, 3};
-			Config object{{"name", "Emil"}, {"age", 30}};
 		*/
 		Config(std::initializer_list<Config> values);
+
+		/* Construct an object:
+			Config object{
+				KV{"name", "Emil"},
+				KV{"age", 30}
+			};
+		*/
+		Config(std::initializer_list<KeyValue<Config>> values);
 
 		template<typename T>
 		Config(const std::vector<T>& values) : _type(Uninitialized)
@@ -236,11 +253,11 @@ namespace configuru
 		void make_array();
 		void tag(const DocInfo_SP& doc, unsigned line, unsigned column);
 
-		// Preferred way to create objects!
+		// Explicitly create an object:
 		static Config object();
-		static Config object(std::initializer_list<std::pair<std::string, Config>> values);
+		static Config object(std::initializer_list<KeyValue<Config>> values);
 
-		// Preferred way to create arrays!
+		// Explicitly create an array:
 		static Config array();
 		static Config array(std::initializer_list<Config> values);
 
@@ -662,6 +679,8 @@ namespace configuru
 		const_iterator cend()   const { return const_iterator{_impl.cend()};   }
 	};
 
+	using KV = KeyValue<Config>;
+
 	// ------------------------------------------------------------------------
 
 	inline bool operator==(const Config& a, const Config& b)
@@ -1054,33 +1073,19 @@ namespace configuru
 
 	Config::Config(std::initializer_list<Config> values) : _type(Uninitialized)
 	{
-		if (values.size() == 0) {
-			CONFIGURU_ONERROR("Can't deduce object or array with empty initializer array.");
+		CONFIGURU_ASSERT(values.size() != 0);
+		make_array();
+		for (auto&& v : values) {
+			push_back(std::move(v));
 		}
+	}
 
-		bool is_object = true;
-
-		for (const auto& v : values)
-		{
-			if (!v.is_array()       ||
-				v.array_size() != 2 ||
-				!v[0].is_string())
-			{
-				is_object = false;
-				break;
-			}
-		}
-
-		if (is_object) {
-			make_object();
-			for (auto&& v : values) {
-				(*this)[(std::string)v[0]] = std::move(v[1]);
-			}
-		} else {
-			make_array();
-			for (auto&& v : values) {
-				push_back(std::move(v));
-			}
+	Config::Config(std::initializer_list<KeyValue<Config>> values) : _type(Uninitialized)
+	{
+		CONFIGURU_ASSERT(values.size() != 0);
+		make_object();
+		for (auto&& p : values) {
+			(*this)[p.key] = std::move(p.value);
 		}
 	}
 
@@ -1105,12 +1110,12 @@ namespace configuru
 		return ret;
 	}
 
-	Config Config::object(std::initializer_list<std::pair<std::string, Config>> values)
+	Config Config::object(std::initializer_list<KeyValue<Config>> values)
 	{
 		Config ret;
 		ret.make_object();
 		for (auto&& p : values) {
-			ret[(std::string)p.first] = std::move(p.second);
+			ret[p.key] = std::move(p.value);
 		}
 		return ret;
 	}
@@ -1489,10 +1494,10 @@ namespace configuru
 #include <cerrno>
 #include <cstdlib>
 
-using namespace configuru;
-
 namespace configuru
 {
+	using namespace configuru;
+
 	void append(Comments& a, Comments&& b)
 	{
 		for (auto&& entry : b) {
