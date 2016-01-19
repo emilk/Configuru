@@ -144,6 +144,11 @@ Tabs anywhere else is not allowed.
 	#define CONFIGURU_IMPLICIT_CONVERSIONS 0
 #endif
 
+#ifndef CONFIGURU_VALUE_SEMANTICS
+	// If set, all copies are deep clones.
+	#define CONFIGURU_VALUE_SEMANTICS 0
+#endif
+
 #define CONFIGURU_NORETURN __attribute__((noreturn))
 
 #undef Bool // Needed on Ubuntu 14.04 with GCC 4.8.5
@@ -237,9 +242,12 @@ namespace configuru
 
 		using ConfigArrayImpl = std::vector<Config>;
 		using ConfigObjectImpl = std::map<std::string, ObjectEntry>;
-		struct ConfigArray {
-			std::atomic<unsigned> _ref_count { 1 };
-			ConfigArrayImpl       _impl;
+		struct ConfigArray
+		{
+			#if !CONFIGURU_VALUE_SEMANTICS
+				std::atomic<unsigned> _ref_count { 1 };
+			#endif
+			ConfigArrayImpl _impl;
 		};
 		struct ConfigObject;
 
@@ -571,8 +579,10 @@ namespace configuru
 		// Compare Config values recursively.
 		static bool deep_eq(const Config& a, const Config& b);
 
+#if !CONFIGURU_VALUE_SEMANTICS // No need for a deep_clone method when all copies are deep clones.
 		// Copy this Config value recursively.
 		Config deep_clone() const;
+#endif
 
 		// ----------------------------------------
 
@@ -655,7 +665,9 @@ namespace configuru
 
 	struct Config::ConfigObject
 	{
-		std::atomic<unsigned> _ref_count { 1 };
+		#if !CONFIGURU_VALUE_SEMANTICS
+			std::atomic<unsigned> _ref_count { 1 };
+		#endif
 		ConfigObjectImpl      _impl;
 
 		class iterator
@@ -1078,10 +1090,13 @@ namespace configuru
 
 	struct BadLookupInfo
 	{
-		DocInfo_SP            doc;      // Of parent object
-		unsigned              line;     // Of parent object
-		std::string           key;
-		std::atomic<unsigned> _ref_count { 1 };
+		const DocInfo_SP      doc;      // Of parent object
+		const unsigned        line;     // Of parent object
+		const std::string     key;
+
+		#if !CONFIGURU_VALUE_SEMANTICS
+			std::atomic<unsigned> _ref_count { 1 };
+		#endif
 
 		BadLookupInfo(DocInfo_SP doc_, unsigned line_, std::string key_)
 			: doc(std::move(doc_)), line(line_), key(std::move(key_)) {}
@@ -1209,11 +1224,21 @@ namespace configuru
 		_type = o._type;
 		if (_type == String) {
 			_u.str = new std::string(*o._u.str);
+#if CONFIGURU_VALUE_SEMANTICS
+		} else if (_type == BadLookupType) {
+			_u.bad_lookup = new BadLookupInfo(*o._u.bad_lookup);
+		} else if (_type == Object) {
+			_u.object = new ConfigObject(*o._u.object);
+		} else if (_type == Array) {
+			_u.array = new ConfigArray(*o._u.array);
+#endif
 		} else {
 			memcpy(&_u, &o._u, sizeof(_u));
-			if (_type == BadLookupType) { _u.array->_ref_count  += 1; }
-			if (_type == Array)         { _u.array->_ref_count  += 1; }
-			if (_type == Object)        { _u.object->_ref_count += 1; }
+			#if !CONFIGURU_VALUE_SEMANTICS
+				if (_type == BadLookupType) { _u.bad_lookup->_ref_count += 1; }
+				if (_type == Array)         { _u.array->_ref_count      += 1; }
+				if (_type == Object)        { _u.object->_ref_count     += 1; }
+			#endif
 		}
 
 		if (o._doc) {
@@ -1349,6 +1374,7 @@ namespace configuru
 		return false;
 	}
 
+#if !CONFIGURU_VALUE_SEMANTICS
 	Config Config::deep_clone() const
 	{
 		Config ret = *this;
@@ -1368,6 +1394,7 @@ namespace configuru
 		}
 		return ret;
 	}
+#endif
 
 	void Config::check_dangling() const
 	{
@@ -1431,18 +1458,27 @@ namespace configuru
 
 	void Config::free()
 	{
-		if (_type == BadLookupType) {
-			if (--_u.bad_lookup->_ref_count == 0) {
+		#if CONFIGURU_VALUE_SEMANTICS
+			if (_type == BadLookupType) {
 				delete _u.bad_lookup;
-			}
-		} else if (_type == Object) {
-			if (--_u.object->_ref_count == 0) {
+			} else if (_type == Object) {
 				delete _u.object;
-			}
-		} else if (_type == Array) {
-			if (--_u.array->_ref_count == 0) {
+			} else if (_type == Array) {
 				delete _u.array;
-			}
+		#else
+			if (_type == BadLookupType) {
+				if (--_u.bad_lookup->_ref_count == 0) {
+					delete _u.bad_lookup;
+				}
+			} else if (_type == Object) {
+				if (--_u.object->_ref_count == 0) {
+					delete _u.object;
+				}
+			} else if (_type == Array) {
+				if (--_u.array->_ref_count == 0) {
+					delete _u.array;
+				}
+		#endif
 		} else if (_type == String) {
 			delete _u.str;
 		}

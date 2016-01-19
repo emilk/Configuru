@@ -4,6 +4,7 @@
 
 #define CONFIGURU_ASSERT(test) CHECK_F(test)
 
+#define CONFIGURU_VALUE_SEMANTICS 1
 #define CONFIGURU_IMPLEMENTATION 1
 #include "../configuru.hpp"
 
@@ -646,6 +647,24 @@ void test_conversions()
 	CHECK_EQ_F(pairs[1].second, 4.4f);
 }
 
+void test_copy_semantics()
+{
+    LOG_F(INFO, "test_copy_semantics...");
+    Config original{
+        { "key", "original_value" }
+    };
+    CHECK_F(original["key"] == "original_value");
+    Config copy = original;
+    CHECK_F(copy["key"] == "original_value");
+    copy["key"] = "new_value";
+    CHECK_F(copy["key"] == "new_value");
+#if CONFIGURU_VALUE_SEMANTICS
+    CHECK_F(original["key"] == "original_value");
+#else
+    CHECK_F(original["key"] == "new_value");
+#endif
+}
+
 int main(int argc, char* argv[])
 {
 	loguru::init(argc, argv);
@@ -668,4 +687,5 @@ int main(int argc, char* argv[])
 	std::cout << "configuru CFG: \n"  << configuru::dump_string(EXAMPLE_JSON, CFG)  << std::endl;
 
 	run_unit_tests();
+    test_copy_semantics();
 }
