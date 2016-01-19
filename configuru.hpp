@@ -284,9 +284,16 @@ namespace configuru
 		Config(const std::vector<T>& values) : _type(Uninitialized)
 		{
 			make_array();
-			for (const auto& v : values)
-			{
+			for (const auto& v : values) {
 				push_back(v);
+			}
+		}
+
+		Config(const std::vector<bool>& values) : _type(Uninitialized)
+		{
+			make_array();
+			for (const auto& v : values) {
+				push_back(!!v);
 			}
 		}
 
@@ -294,8 +301,7 @@ namespace configuru
 		Config(const std::map<std::string, T>& values) : _type(Uninitialized)
 		{
 			make_object();
-			for (const auto& p : values)
-			{
+			for (const auto& p : values) {
 				(*this)[p.first] = p.second;
 			}
 		}
