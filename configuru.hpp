@@ -148,17 +148,6 @@ namespace configuru
 	template<typename T>
 	inline T as(const configuru::Config& config);
 
-	template<typename ValueType>
-	struct KeyValue
-	{
-		KeyValue(std::string k, ValueType v)
-			: key(std::move(k)), value(std::move(v))
-		{ }
-
-		std::string key;
-		ValueType   value;
-	};
-
 	/*
 	 A dynamic config variable.
 	 Acts like something out of Python or Lua.
@@ -220,7 +209,7 @@ namespace configuru
 				KV{"age", 30}
 			};
 		*/
-		Config(std::initializer_list<KeyValue<Config>> values);
+		Config(std::initializer_list<std::pair<std::string, Config>> values);
 
 		template<typename T>
 		Config(const std::vector<T>& values) : _type(Uninitialized)
@@ -255,7 +244,7 @@ namespace configuru
 
 		// Explicitly create an object:
 		static Config object();
-		static Config object(std::initializer_list<KeyValue<Config>> values);
+		static Config object(std::initializer_list<std::pair<std::string, Config>> values);
 
 		// Explicitly create an array:
 		static Config array();
@@ -679,7 +668,7 @@ namespace configuru
 		const_iterator cend()   const { return const_iterator{_impl.cend()};   }
 	};
 
-	using KV = KeyValue<Config>;
+	using KV = std::pair<std::string, Config>;
 
 	// ------------------------------------------------------------------------
 
@@ -1075,17 +1064,19 @@ namespace configuru
 	{
 		CONFIGURU_ASSERT(values.size() != 0);
 		make_array();
+		auto& impl = as_array();
+		impl.reserve(values.size());
 		for (auto&& v : values) {
-			push_back(std::move(v));
+			impl.push_back(std::move(v));
 		}
 	}
 
-	Config::Config(std::initializer_list<KeyValue<Config>> values) : _type(Uninitialized)
+	Config::Config(std::initializer_list<std::pair<std::string, Config>> values) : _type(Uninitialized)
 	{
 		CONFIGURU_ASSERT(values.size() != 0);
 		make_object();
 		for (auto&& p : values) {
-			(*this)[p.key] = std::move(p.value);
+			(*this)[p.first] = std::move(p.second);
 		}
 	}
 
@@ -1110,12 +1101,12 @@ namespace configuru
 		return ret;
 	}
 
-	Config Config::object(std::initializer_list<KeyValue<Config>> values)
+	Config Config::object(std::initializer_list<std::pair<std::string, Config>> values)
 	{
 		Config ret;
 		ret.make_object();
 		for (auto&& p : values) {
-			ret[p.key] = std::move(p.value);
+			ret[p.first] = std::move(p.second);
 		}
 		return ret;
 	}
@@ -1131,8 +1122,10 @@ namespace configuru
 	{
 		Config ret;
 		ret.make_array();
+		auto& impl = ret.as_array();
+		impl.reserve(values.size());
 		for (auto&& v : values) {
-			ret.push_back(std::move(v));
+			impl.push_back(std::move(v));
 		}
 		return ret;
 	}
