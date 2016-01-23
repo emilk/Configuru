@@ -90,15 +90,15 @@ Here's some use errors and their error messages:
 
 `config.json:2: Expected bool, got float`. Note that the file:line points to where the value is defined.
 
-	std::cout << (float)config["obj"]["does_not_exist"];
+	std::cout << config["obj"]["does_not_exist"];
 
 `config.json:4: Failed to find key 'does_not_exist'`. Here the file and line of the owner (`"obj"`) of the missing value is referenced.
 
-	std::cout << (float)config["pi"][5];
+	std::cout << config["pi"][5];
 
 `config.json:2: Expected array, got float`.
 
-	std::cout << (float)config["array"][5];
+	std::cout << config["array"][5];
 
 `config.json:3: Array index out of range`
 
@@ -146,7 +146,7 @@ And in one .cpp file:
 Usage (parsing)
 -------------------------------------------------------------------------------
 
-	Config cfg = configuru::parse_file("input.json", configuru::JSON);
+	Config cfg = configuru::parse_file("input.json", JSON);
 	float alpha = (float)cfg["alpha"];
 	if (cfg.has_key("beta")) {
 		std::string beta = (std::string)cfg["beta"];
@@ -172,11 +172,11 @@ Usage (parsing)
 	// You can modify the read config:
 	cfg["message"] = "goodbye";
 
-	dump_file("output.cfg", cfg, JSON); // Will include comments in the original.
+	dump_file("output.json", cfg, JSON); // Will include comments in the original.
 
 Reference semantics vs value semantics
 -------------------------------------------------------------------------------
-By default, Config objects acts like reference types, e.g. like a std::shared_ptr:
+By default, Config objects acts like reference types, e.g. like a `std::shared_ptr`:
 
 	auto shallow_copy = cfg;
 	cfg["message"] = "changed!";
@@ -201,14 +201,14 @@ Usage (writing):
 
 	Config cfg = Config::new_object();
 	cfg["pi"]     = 3.14;
-	cfg["array"]  = { 1, 2, 3 };
-	cfg["object"] = {
+	cfg["array"]  = Config::array{ 1, 2, 3 };
+	cfg["object"] = Config::object{
 		{ "key1", "value1" },
 		{ "key2", "value2" },
 	};
 
 	std::string json = dump_string(cfg, JSON);
-	dump_file("output.cfg", cfg, JSON);
+	dump_file("output.json", cfg, JSON);
 
 CFG format
 ===============================================================================
@@ -245,7 +245,7 @@ Beautiful output
 ===============================================================================
 One of the great things about JSON is that it is human readable (as opposed to XML). Configuru goes to great lengths to make the output as readable as possible. Here's an example structure (as defined in C++):
 
-	Config cfg{
+	Config cfg = Config::object{
 		{"float",       3.14f},
 		{"double",      3.14},
 		{"short_array", {1, 2, 3}},
@@ -299,11 +299,5 @@ Note how Configuru refrains from unnecessary line breaks on short arrays and doe
 
 TODO:
 ===============================================================================
-* Consider prettifying how objects are defined in C++ using a `KV` (key-value) function/class:
-
-	configuru::Config cfg{
-		KV{"float",       3.14f},
-		KV{"double",      3.14},
-		KV{"short_array", {1, 2, 3}},
-		KV{"long_array",  {"one", {"two", "things"}, "three"}},
-	};
+* Force the use of `Config::array` for constructing arrays.
+* Allow user to customize how `check_dangling` report errors. I suggest an overload where you can send in an `std::function<void(const std::string& where, const std::string& key)>` to be called on each error, as well as the current `CONFIGURU_ON_DANGLING` as a default.
