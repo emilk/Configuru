@@ -35,10 +35,12 @@ For more info, please se README.md (at www.github.com/emilk/configuru).
 #ifndef CONFIGURU_HEADER_HPP
 #define CONFIGURU_HEADER_HPP
 
+#include <algorithm>
 #include <atomic>
 #include <cmath>
 #include <initializer_list>
 #include <iterator>
+#include <limits>
 #include <map>
 #include <memory>
 #include <ostream>
