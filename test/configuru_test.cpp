@@ -488,8 +488,8 @@ void create()
 	cfg["answer"] = Config::object();
 	cfg["answer"]["everything"] = 42;
 
-	// add an array that is stored as std::vector (using an initializer_list)
-	cfg["array"] = { 1, 0, 2 };
+	// add an array that is stored as std::vector
+	cfg["array"] = Config::array({ 1, 0, 2 });
 
 	// add another object (using an initializer_list of pairs)
 	cfg["object"] = {
@@ -506,7 +506,7 @@ void create()
 		{ "answer",  {
 			{ "everything", 42 }
 		} },
-		{ "array",   { 1, 0, 2 } },
+		{ "array",   Config::array({ 1, 0, 2 }) },
 		{ "object",  {
 			{ "currency", "USD" },
 			{ "value",    42.99 }
@@ -589,7 +589,7 @@ void test_conversions()
 		{ "float",        2.75f   },
 		{ "double",       3.14    },
 		{ "string",      "Hello!" },
-		{ "mixed_array", { nullptr, 1, "two" } }
+		{ "mixed_array", Config::array({ nullptr, 1, "two" }) }
 	};
 
 	auto explicit_bool = (bool)cfg["bool"];
@@ -675,16 +675,31 @@ int main(int argc, char* argv[])
 	test_comments();
 	test_conversions();
 
-#define EXAMPLE_JSON {                                        \
-		{"float",       3.14f},                               \
-		{"double",      3.14},                                \
-		{"short_array", {1, 2, 3}},                           \
-		{"long_array",  {"one", {"two", "things"}, "three"}}, \
-	}
+	nlohmann::json nlohmann_json {
+		{"float",       3.14f},
+		{"double",      3.14},
+		{"short_array", {1, 2, 3}},
+		{"long_array",  {
+			"one",
+			{"two", "things"},
+			"three",
+		}},
+	};
 
-	std::cout << "nlohmann: \n"       << nlohmann::json(EXAMPLE_JSON).dump(4) << std::endl;
-	std::cout << "configuru JSON: \n" << configuru::dump_string(EXAMPLE_JSON, JSON) << std::endl;
-	std::cout << "configuru CFG: \n"  << configuru::dump_string(EXAMPLE_JSON, CFG)  << std::endl;
+	Config configuru_cfg {
+		{"float",       3.14f},
+		{"double",      3.14},
+		{"short_array", Config::array({1, 2, 3})},
+		{"long_array",  Config::array({
+			"one",
+			Config::array({"two", "things"}),
+			"three",
+		})},
+	};
+
+	std::cout << "nlohmann: \n"       << nlohmann::json(nlohmann_json).dump(4) << std::endl;
+	std::cout << "configuru JSON: \n" << configuru::dump_string(configuru_cfg, JSON) << std::endl;
+	std::cout << "configuru CFG: \n"  << configuru::dump_string(configuru_cfg, CFG)  << std::endl;
 
 	run_unit_tests();
     test_copy_semantics();

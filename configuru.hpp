@@ -198,12 +198,24 @@ namespace configuru
 		Config(const char* str);
 		Config(std::string str);
 
-		/*
-		If the given values are stirng-value pairs, it is assumed to be an object, else an array.
-			Config array{1, 2, 3};
-			Config object{{"name", "Emil"}, {"age", 30}};
+		/*  This constructor is a short-form for Config::objet(...).
+		    We have no short-form for Config::array(...),
+		    as that is less common and can lead to ambiguities.
+		    Usage:
+				Config cfg {
+					{ "key",    "value" },
+					{ "empty_array",  Config::array() },
+					{ "array",        Config::array({1, 2, 3}) },
+					{ "empty_object", Config::object() },
+					{ "object", Config::object({
+						{ "nested_key", "nested_value" },
+					})},
+					{ "another_object", {
+						{ "nested_key", "nested_value" },
+					}},
+				};
 		*/
-		Config(std::initializer_list<Config> values);
+		Config(std::initializer_list<std::pair<std::string, Config>> values);
 
 		template<typename T>
 		Config(const std::vector<T>& values) : _type(Uninitialized)
@@ -1054,35 +1066,11 @@ namespace configuru
 		_u.str = new std::string(move(str));
 	}
 
-	Config::Config(std::initializer_list<Config> values) : _type(Uninitialized)
+	Config::Config(std::initializer_list<std::pair<std::string, Config>> values) : _type(Uninitialized)
 	{
-		if (values.size() == 0) {
-			CONFIGURU_ONERROR("Can't deduce object or array with empty initializer array.");
-		}
-
-		bool is_object = true;
-
-		for (const auto& v : values)
-		{
-			if (!v.is_array()       ||
-				v.array_size() != 2 ||
-				!v[0].is_string())
-			{
-				is_object = false;
-				break;
-			}
-		}
-
-		if (is_object) {
-			make_object();
-			for (auto&& v : values) {
-				(*this)[(std::string)v[0]] = std::move(v[1]);
-			}
-		} else {
-			make_array();
-			for (auto&& v : values) {
-				push_back(std::move(v));
-			}
+		make_object();
+		for (auto&& v : values) {
+			(*this)[(std::string)v.first] = std::move(v.second);
 		}
 	}
 
