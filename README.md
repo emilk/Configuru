@@ -131,7 +131,7 @@ The call to `check_dangling` will print a warning:
 
 	config.json:2: Key 'colour' never accessed
 
-This is very helpful for finding subtle mistakes. The call to `check_dangling` is recursive, so you only need to call it once for every config file. If you want to mute warning for some key (which you may intentionally be ignoring, or saving for later) you can call `cfg.mark_checed(true)`.
+This is very helpful for finding subtle mistakes. The call to `check_dangling` is recursive, so you only need to call it once for every config file. If you want to mute warning for some key (which you may intentionally be ignoring, or saving for later) you can call `cfg.mark_accessed(true)`.
 
 Usage
 ===============================================================================

@@ -209,6 +209,7 @@ namespace configuru
 		Config(const std::vector<T>& values) : _type(Uninitialized)
 		{
 			make_array();
+			_u.array->_impl.reserve(values.size());
 			for (const auto& v : values) {
 				push_back(v);
 			}
@@ -217,6 +218,7 @@ namespace configuru
 		Config(const std::vector<bool>& values) : _type(Uninitialized)
 		{
 			make_array();
+			_u.array->_impl.reserve(values.size());
 			for (const auto& v : values) {
 				push_back(!!v);
 			}
@@ -1126,6 +1128,7 @@ namespace configuru
 	{
 		Config ret;
 		ret.make_array();
+		ret._u.array->_impl.reserve(values.size());
 		for (auto&& v : values) {
 			ret.push_back(std::move(v));
 		}
