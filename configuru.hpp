@@ -12,7 +12,7 @@ recognized, you are granted a perpetual, irrevocable license to copy
 and modify this file as you see fit.
 
 That being said, I would appreciate credit!
-If you find this library useful, tweet me @ernerfeldt or mail me at emil.ernerfeldt@gmail.com.
+If you find this library useful, send a tweet to [@ernerfeldt](https://twitter.com/ernerfeldt) or mail me at emil.ernerfeldt@gmail.com.
 
 Getting started:
 ----------------

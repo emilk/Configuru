@@ -2,6 +2,7 @@ Configuru
 ===============================================================================
 Configuru, an experimental JSON config library for C++, by Emil Ernerfeldt.
 
+
 License
 -------------------------------------------------------------------------------
 This software is in the public domain. Where that dedication is not
@@ -9,44 +10,50 @@ recognized, you are granted a perpetual, irrevocable license to copy
 and modify this file as you see fit.
 
 That being said, I would appreciate credit!
-If you find this library useful, tweet me at @ernerfeldt mail me at emil.ernerfeldt@gmail.com.
+If you find this library useful, send a tweet to [@ernerfeldt](https://twitter.com/ernerfeldt) or mail me at emil.ernerfeldt@gmail.com.
+
 
 Overview
 -------------------------------------------------------------------------------
 Configuru is a JSON parser/writer for C++11. Configuru was written for human created/edited config files and therefore prioritizes helpful error messages over parse speed.
 
+
 Goals
 -------------------------------------------------------------------------------
-* Debugable:
+* **Debugable**:
 	* Find typos most config libs miss (like typos in keys).
-	* Easily find source of typos with line numbers and helpful error messages.
+	* Easily find source of typos with file name, line numbers and helpful error messages.
 	* Cleverly help to point out mismatched braces in the right place.
-* Configurable:
+* **Configurable**:
 	* Configure the format to allow relaxed and extended flavors of JSON.
-	* Very pretty printing.
 	* Extensible with custom conversions.
 	* Control how the `configuru::Config` behaves in your code via compile time constants:
 		* Override `CONFIGURU_ONERROR` to add additional debug info (like stack traces) on errors.
 		* Override `CONFIGURU_ASSERT` to use your own asserts.
+		* Override `CONFIGURU_ON_DANGLING` to customize how non-referenced/dangling keys are reported.
 		* Set `CONFIGURU_IMPLICIT_CONVERSIONS` to allow things like `float f = some_config;`
 		* Set `CONFIGURU_VALUE_SEMANTICS` to have `Config` behave like a value type rather than a reference type.
-* Easy to use:
+* **Easy to use**:
 	* Smooth C++11 integration for reading and creating config values.
-* JSON compliant:
-	* Configuru has one of the highest conformance ratings on [Native JSON Benchmark](https://github.com/miloyip/nativejson-benchmark)
+* **JSON compliant**:
+	* Configuru has one of the highest conformance ratings on the [Native JSON Benchmark](https://github.com/miloyip/nativejson-benchmark)
+* **Beautiful output** (pretty printing)
+* **Reversible with comments**:
+	* If comments are turned on in `FormatOptions` they will be parsed and written together with the right key/value.
 
-Non-goals
--------------------------------------------------------------------------------
+### Non-goals
 * Low overhead
+
 
 Error messages
 ===============================================================================
-Configuru prides itself on great error messages both for parse errors and for value errors (expecting one thing and getting another).
+Configuru prides itself on great error messages both for parse errors and for value errors (expecting one thing and getting another). All error messages come with file name a line number. When parsing from a string (rather than a file) the user can specify an identifier to be used in lieu of a file name.
+
 
 Parse errors
 -------------------------------------------------------------------------------
 
-	equal_in_object.cfg:1:16: Expected : after object key
+	equal_in_object.json:1:16: Expected : after object key
 	{ "is_this_ok" = true }
 	               ^
 
@@ -62,28 +69,29 @@ Parse errors
 	{"X
 	 ^
 
-	single_line_comment.cfg:1:4: Single line comments forbidden.
+	single_line_comment.json:1:4: Single line comments forbidden.
 	{} // Blah-bla
 	   ^
 
-	unary_plus.cfg:1:1: Prefixing numbers with + is forbidden.
+	unary_plus.json:1:1: Prefixing numbers with + is forbidden.
 	+42
 	^
 
 Note how all errors mention follow the standard `filename:line:column` structure (most errors above happen on line `1` since they are from small unit tests).
 
+
 Value errors
 -------------------------------------------------------------------------------
 Similarly, using a parsed Config value in the wrong way produces nice error messages. Take the following file (`config.json`):
 
-``` json
-{
-	"pi":    3.14,
-	"array": [ 1, 2, 3, 4 ],
-	"obj":   {
-		"nested_value": 42
-	}
-}
+```
+ 1: {
+ 2: 	"pi":    3.14,
+ 3: 	"array": [ 1, 2, 3, 4 ],
+ 4: 	"obj":   {
+ 5: 		"nested_value": 42
+ 6: 	}
+ 7: }
 ```
 
 Here's some use errors and their error messages:
@@ -117,18 +125,19 @@ Config cfg;
 cfg["hello"] = 42;
 ```
 
-`Expected object, got uninitialized. Did you forget to call Config::object()?`
+`Expected object, got uninitialized. Did you forget to call Config::object()?`. The first line should read `Config cfg = Config::object();`.
 
 ``` C++
 Config cfg;
 cfg.push_back("hello");
 ```
 
-`Expected array, got uninitialized. Did you forget to call Config::array()?`
+`Expected array, got uninitialized. Did you forget to call Config::array()?`. The first line should read `Config cfg = Config::array();`.
+
 
 Unused keys
 -------------------------------------------------------------------------------
-Configuru has a novel mechanism for detecting subtle typos in object keys. Let say you have a Config that looks like this:
+Configuru has a novel mechanism for detecting subtle typos in object keys. Suppose you have a Config that looks like this:
 
 	{
 		"colour": "red",
@@ -147,7 +156,10 @@ The call to `check_dangling` will print a warning:
 
 	config.json:2: Key 'colour' never accessed
 
-This is very helpful for finding subtle mistakes. The call to `check_dangling` is recursive, so you only need to call it once for every config file. If you want to mute warning for some key (which you may intentionally be ignoring, or saving for later) you can call `cfg.mark_accessed(true)`.
+This is akin to a compiler warning about unused variables and it's an effective way of finding mistakes that would otherwise go undetected.
+
+The call to `check_dangling` is recursive, so you only need to call it once for every config file. If you want to mute this warning for some key (which you may intentionally be ignoring, or saving for later) you can call `cfg.mark_accessed(true)`. This will recursively mark each `Config` as having been accessed.
+
 
 Usage
 ===============================================================================
@@ -161,6 +173,7 @@ And in one .cpp file:
 #include <configuru.hpp>
 ```
 
+
 Usage (parsing)
 -------------------------------------------------------------------------------
 ``` C++
@@ -171,7 +184,6 @@ if (cfg.has_key("beta")) {
 }
 float pi = cfg.get_or(pi, 3.14f);
 
-const auto& array = cfg["array"];
 if (cfg["array"].is_array()) {
 	std::cout << "First element: " << cfg["array"][0];
 	for (const Config& element : cfg["array"].as_array()) {
@@ -180,8 +192,8 @@ if (cfg["array"].is_array()) {
 }
 
 for (auto& p : cfg["object"].as_object()) {
-	std::cout << "Key: "   << p.key() << std::endl;
-	std::cout << "Value: " << p.value();
+	std::cout << "Key: " << p.key() << std::endl;
+	std::cout << "Value: " << p.value() << std::endl;
 	p.value() = "new value";
 }
 
@@ -190,36 +202,11 @@ cfg.check_dangling(); // Make sure we haven't forgot reading a key!
 // You can modify the read config:
 cfg["message"] = "goodbye";
 
-dump_file("output.json", cfg, JSON); // Will include comments in the original.
+dump_file("output.json", cfg, JSON);
 ```
 
-Reference semantics vs value semantics
--------------------------------------------------------------------------------
-By default, Config objects acts like reference types, e.g. like a `std::shared_ptr`:
 
-``` C++
-auto shallow_copy = cfg;
-cfg["message"] = "changed!";
-std::cout << shallow_copy["message"]; // Will print "changed!";
-```
-
-You can control this behavior with `#define CONFIGURU_VALUE_SEMANTICS 1`:
-
-``` C++
-#define CONFIGURU_VALUE_SEMANTICS 1
-#include <configuru.hpp>
-...
-Config cfg{{"message", "original"}};
-auto deep_clone = cfg;
-cfg["message"] = "changed!";
-std::cout << deep_clone["message"]; // Will print "original";
-```
-
-Errors
--------------------------------------------------------------------------------
-The default behavior of Configuru is to throw a `std::runtime_error` on any error. You can change this behavior by overriding `CONFIGURU_ONERROR`.
-
-Usage (writing):
+Usage (writing)
 -------------------------------------------------------------------------------
 
 ``` C++
@@ -250,10 +237,42 @@ std::string json = dump_string(cfg, JSON);
 dump_file("output.json", cfg, JSON);
 ```
 
+
+Reference semantics vs value semantics
+-------------------------------------------------------------------------------
+By default, Config objects acts like reference types, e.g. like a `std::shared_ptr`:
+
+``` C++
+Config cfg{{"message", "original"}};
+auto shallow_copy = cfg;
+cfg["message"] = "changed!";
+std::cout << shallow_copy["message"]; // Will print "changed!";
+
+auto deep_clone = cfg.deep_clone(); // Deep clones have to be explicit.
+```
+
+You can control this behavior with `#define CONFIGURU_VALUE_SEMANTICS 1`:
+
+``` C++
+#define CONFIGURU_VALUE_SEMANTICS 1
+#include <configuru.hpp>
+...
+Config cfg{{"message", "original"}};
+auto deep_clone = cfg;
+cfg["message"] = "changed!";
+std::cout << deep_clone["message"]; // Will print "original";
+```
+
+
+Errors
+-------------------------------------------------------------------------------
+The default behavior of Configuru is to throw an `std::runtime_error` on any error. You can change this behavior by overriding `CONFIGURU_ONERROR`.
+
+
 CFG format
 ===============================================================================
 
-In addition to JSON, Configuru also has native support for a format I simply call *CFG*. CFG is like JSON, but with simplifications. Example file:
+In addition to JSON, Configuru also has native support for a format I simply call *CFG*. CFG is a superset of JSON with some simplifications and extensions. Example file:
 
 	values: [1 2 3 4 5 6]
 	object: {
@@ -281,9 +300,10 @@ Indentation is enforced, and must be done with tabs. Tabs anywhere else is not a
 
 You can also allow selective parts of the above extensions to create your own dialect of JSON. Look at the members of `configuru::FormatOptions` for details.
 
+
 Beautiful output
 ===============================================================================
-One of the great things about JSON is that it is human readable (as opposed to XML). Configuru goes to great lengths to make the output as readable as possible. Here's an example structure (as defined in C++):
+One of the great things about JSON is that it is human readable (as opposed to XML). Configuru goes to great lengths to make the output as beautiful as possible. Here's an example structure (as defined in C++):
 
 ``` C++
 Config cfg = Config::object{
@@ -347,6 +367,7 @@ Note how Configuru refrains from unnecessary line breaks on short arrays and doe
 	]
 
 
-TODO:
+TODO
 ===============================================================================
 * Allow user to customize how `check_dangling` report errors. I suggest an overload where you can send in an `std::function<void(const std::string& where, const std::string& key)>` to be called on each error, as well as the current `CONFIGURU_ON_DANGLING` as a default.
+* Test on another compiler than Clang and GCC.
