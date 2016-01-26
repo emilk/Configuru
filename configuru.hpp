@@ -38,6 +38,7 @@ For more info, please se README.md (at www.github.com/emilk/configuru).
 #include <algorithm>
 #include <atomic>
 #include <cmath>
+#include <cstring>
 #include <initializer_list>
 #include <iterator>
 #include <limits>
