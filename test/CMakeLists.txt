@@ -12,8 +12,19 @@ add_definitions(-DBOOST_FILESYSTEM_VERSION=3)
 include_directories(${Boost_INCLUDE_DIRS})
 
 MESSAGE(STATUS "CMAKE_BUILD_TYPE: ${CMAKE_BUILD_TYPE}")
+MESSAGE(STATUS "CMAKE_CXX_COMPILER_ID: ${CMAKE_CXX_COMPILER_ID}")
 
 add_compile_options(-std=c++11 -Werror -Wall -Wextra)
+
+if ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
+    MESSAGE(STATUS "Compiling with fsanitize")
+    add_compile_options(-fsanitize=memory)
+    #add_compile_options(-fsanitize=address)
+    #add_compile_options(-fsanitize=undefined)
+
+    add_compile_options(--no-undefined)
+    add_compile_options(-Wno-error=unused-command-line-argument)
+endif()
 
 file(GLOB source
     "${CMAKE_CURRENT_SOURCE_DIR}/*.cpp"
@@ -21,6 +32,8 @@ file(GLOB source
 )
 
 add_executable(configuru_test ${source})
+
+MESSAGE(STATUS "Boost_FILESYSTEM_LIBRARY: ${Boost_FILESYSTEM_LIBRARY}")
 
 find_package(Threads)
 target_link_libraries(configuru_test ${Boost_FILESYSTEM_LIBRARY})

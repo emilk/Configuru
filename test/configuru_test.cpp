@@ -1,6 +1,5 @@
-
-#define LOGURU_IMPLEMENTATION 1
-#include "loguru.hpp"
+#define CHECK_F(test) if (test) {} else { std::cerr << "FAILED" << std::endl; };
+#define CHECK_EQ_F(a, b) CHECK_F((a) == (b))
 
 #define CONFIGURU_ASSERT(test) CHECK_F(test)
 
@@ -8,16 +7,21 @@
 #define CONFIGURU_IMPLEMENTATION 1
 #include "../configuru.hpp"
 
+#include <algorithm>
 #include <iostream>
 
-#include <boost/filesystem.hpp>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <dirent.h>
 
 #include "json.hpp"
 
-namespace fs = boost::filesystem;
+const char* const TERMINAL_RED   = "\e[31m";
+const char* const TERMINAL_GREEN = "\e[32m";
+const char* const TERMINAL_RESET = "\e[0m";
 
-const std::string PASS_STRING = (std::string)loguru::terminal_green() + "PASS: " + loguru::terminal_reset();
-const std::string FAIL_STRING = (std::string)loguru::terminal_red()   + "FAIL: " + loguru::terminal_reset();
+const std::string PASS_STRING = (std::string)TERMINAL_GREEN + "PASS: " + TERMINAL_RESET;
+const std::string FAIL_STRING = (std::string)TERMINAL_RED   + "FAIL: " + TERMINAL_RESET;
 
 struct Tester
 {
@@ -46,16 +50,26 @@ struct Tester
 	}
 };
 
-std::vector<fs::path> list_files(fs::path directory, std::string extension)
+bool ends_with(const std::string& str, const std::string& end)
 {
-    std::vector<fs::path> result;
-    fs::directory_iterator it(directory);
-    fs::directory_iterator end;
-    for (; it != end; ++it) {
-        if (fs::is_regular_file(it->status()) && fs::extension(*it) == extension) {
-            result.push_back(it->path());
+    if (str.size() < end.size()) { return false; }
+    return str.substr(str.size() - end.size()) == end;
+}
+
+std::vector<std::string> list_files(std::string path, std::string extension)
+{
+    std::vector<std::string> result;
+    auto directory = opendir(path.c_str());
+    if (!directory) {
+        std::cerr << "FILEWrapper: Failed to open directory: " << path;
+        return result;
+    }
+    while (auto dentry = readdir(directory)) {
+        if (ends_with(dentry->d_name, extension)) {
+            result.push_back(path + "/" + dentry->d_name);
         }
     }
+    closedir(directory);
     std::sort(result.begin(), result.end());
     return result;
 }
@@ -79,17 +93,17 @@ void test_code(Tester& tester, std::string test_name, bool should_pass, std::fun
 	}
 }
 
-void test_parse(Tester& tester, FormatOptions options, bool should_pass, fs::path path)
+void test_parse(Tester& tester, FormatOptions options, bool should_pass, std::string path)
 {
-	test_code(tester, path.filename().string(), should_pass, [&](){
-		configuru::parse_file(path.string(), options);
+	test_code(tester, path, should_pass, [&](){
+		configuru::parse_file(path, options);
 	});
 }
 
-void test_all_in(Tester& tester, FormatOptions options, bool should_pass, fs::path dir, std::string extension)
+void test_all_in(Tester& tester, FormatOptions options, bool should_pass, std::string dir, std::string extension)
 {
 	for (auto path : list_files(dir, extension)) {
-		test_parse(tester, options, should_pass, path.string());
+		test_parse(tester, options, should_pass, path);
 	}
 }
 
@@ -122,7 +136,6 @@ void test_writer(Tester& tester, FormatOptions options, std::string name, T valu
 
 void test_special(Tester& tester)
 {
-	LOG_SCOPE_FUNCTION(0);
 	auto format = configuru::JSON;
 	format.enforce_indentation = true;
 	format.indentation = "\t";
@@ -147,7 +160,6 @@ void test_special(Tester& tester)
 
 void test_roundtrip_string(Tester& tester)
 {
-	LOG_SCOPE_FUNCTION(0);
 	auto test_roundtrip = [&](const std::string& json)
 	{
 		Config cfg = configuru::parse_string(json.c_str(), JSON, "roundtrip");
@@ -179,7 +191,6 @@ void test_roundtrip_string(Tester& tester)
 
 void test_strings(Tester& tester)
 {
-	LOG_SCOPE_FUNCTION(0);
 	auto test_string = [&](const std::string& json, const std::string& expected)
 	{
 		std::string output = (std::string)configuru::parse_string(json.c_str(), configuru::JSON, "string");
@@ -204,7 +215,6 @@ void test_strings(Tester& tester)
 
 void test_doubles(Tester& tester)
 {
-	LOG_SCOPE_FUNCTION(0);
 	auto test_double = [&](const std::string& json, const double expected)
 	{
 		double output = (double)configuru::parse_string(json.c_str(), configuru::JSON, "string");
@@ -327,7 +337,6 @@ void test_doubles(Tester& tester)
 
 void test_bad_usage(Tester& tester)
 {
-	LOG_SCOPE_FUNCTION(0);
 	auto config = configuru::parse_file("../../test_suite/special/config.json", configuru::JSON);
 	test_code(tester, "access_float_as_float", true, [&]{
 		auto b = (float)config["pi"];
@@ -365,7 +374,6 @@ void test_bad_usage(Tester& tester)
 
 void run_unit_tests()
 {
-	LOG_SCOPE_FUNCTION(0);
 	Tester tester;
 	std::cout << "JSON expected to pass:" << std::endl;
 	test_all_in(tester, configuru::JSON, true, "../../test_suite/json_pass",      ".json");
@@ -393,9 +401,9 @@ void run_unit_tests()
 	test_roundtrip_string(tester);
 
 	if (tester.num_failed == 0) {
-		printf("%s%lu/%lu tests passed!%s\n", loguru::terminal_green(), tester.num_run, tester.num_run, loguru::terminal_reset());
+		printf("%s%lu/%lu tests passed!%s\n", TERMINAL_GREEN, tester.num_run, tester.num_run, TERMINAL_RESET);
 	} else {
-		printf("%s%lu/%lu tests failed.%s\n", loguru::terminal_red(), tester.num_failed, tester.num_run, loguru::terminal_reset());
+		printf("%s%lu/%lu tests failed.%s\n", TERMINAL_RED, tester.num_failed, tester.num_run, TERMINAL_RESET);
 	}
 	printf("\n\n");
 	fflush(stdout);
@@ -412,7 +420,6 @@ obj:   {
 
 void parse_and_print()
 {
-	LOG_SCOPE_FUNCTION(0);
 	auto cfg = configuru::parse_string(TEST_CFG, configuru::CFG, "test_cfg");
 	std::cout << "pi: " << cfg["pi"] << std::endl;
 	cfg.check_dangling();
@@ -447,7 +454,6 @@ void parse_and_print()
 
 void create()
 {
-	LOG_SCOPE_FUNCTION(0);
 	/*
 	Based on https://github.com/nlohmann/json#examples
 
@@ -519,7 +525,6 @@ void create()
 
 void test_iteration()
 {
-	LOG_SCOPE_FUNCTION(0);
 	const char* TEST_CFG_2 = R"(
 	{
 		"value":  3.14,
@@ -558,7 +563,6 @@ void test_iteration()
 
 void test_comments()
 {
-	LOG_SCOPE_FUNCTION(0);
 	auto in_path  = "../../test_suite/comments_in.cfg";
 	auto out_path = "../../test_suite/comments_out.cfg";
 	auto out_2_path = "../../test_suite/comments_out_2.cfg";
@@ -581,8 +585,6 @@ void test_comments()
 
 void test_conversions()
 {
-	LOG_SCOPE_FUNCTION(0);
-
 	Config cfg = {
 		{ "bool",        true     },
 		{ "int",         42       },
@@ -649,7 +651,6 @@ void test_conversions()
 
 void test_copy_semantics()
 {
-    LOG_F(INFO, "test_copy_semantics...");
     Config original{
         { "key", "original_value" }
     };
@@ -665,10 +666,8 @@ void test_copy_semantics()
 #endif
 }
 
-int main(int argc, char* argv[])
+int main()
 {
-	loguru::init(argc, argv);
-
 	parse_and_print();
 	create();
 	test_iteration();
