@@ -263,12 +263,10 @@ namespace configuru
 
 		// ----------------------------------------
 
-		~Config() { free(); }
+		~Config();
 
 		Config(const Config& o);
-
-		Config(Config&& o) noexcept { this->swap(o); }
-
+		Config(Config&& o) noexcept;
 		Config& operator=(const Config& o);
 
 		// Will still remmeber file/line when assigned an object which has no file/line
@@ -596,13 +594,13 @@ namespace configuru
 		Type  _type = Uninitialized;
 
 		union {
-			bool           b;
-			int64_t        i;
-			double         f;
-			std::string*   str;
-			ConfigObject*  object;
-			ConfigArray*   array;
-			BadLookupInfo* bad_lookup;
+			bool               b;
+			int64_t            i;
+			double             f;
+			const std::string* str;
+			ConfigObject*      object;
+			ConfigArray*       array;
+			BadLookupInfo*     bad_lookup;
 		} _u;
 
 		DocInfo_SP        _doc; // So we can name the file
@@ -671,8 +669,8 @@ namespace configuru
 			ConfigObjectImpl::const_iterator _it;
 		};
 
-		iterator      begin()         { return iterator{_impl.begin()};        }
-		iterator      end()           { return iterator{_impl.end()};          }
+		iterator       begin()        { return iterator{_impl.begin()};        }
+		iterator       end()          { return iterator{_impl.end()};          }
 		const_iterator begin()  const { return const_iterator{_impl.cbegin()}; }
 		const_iterator end()    const { return const_iterator{_impl.cend()};   }
 		const_iterator cbegin() const { return const_iterator{_impl.cbegin()}; }
@@ -1133,15 +1131,21 @@ namespace configuru
 		(void)column; // TODO: include this info too.
 	}
 
-	// ----------------------------------------
+	// ------------------------------------------------------------------------
 
 	Config::Config(const Config& o) : _type(Uninitialized)
 	{
 		*this = o;
 	}
 
+	Config::Config(Config&& o) noexcept : _type(Uninitialized)
+	{
+		this->swap(o);
+	}
+
 	void Config::swap(Config& o) noexcept
 	{
+		if (&o == this) { return; }
 		std::swap(_type,     o._type);
 		std::swap(_u,        o._u);
 		std::swap(_doc,      o._doc);
@@ -1149,64 +1153,111 @@ namespace configuru
 		std::swap(_comments, o._comments);
 	}
 
-	Config& Config::operator=(const Config& o)
-	{
-		// Remember to remember where we come from even when assigned a new value.
-		if (&o == this) { return *this; }
-		free();
-		_type = o._type;
-		if (_type == String) {
-			_u.str = new std::string(*o._u.str);
-#if CONFIGURU_VALUE_SEMANTICS
-		} else if (_type == BadLookupType) {
-			_u.bad_lookup = new BadLookupInfo(*o._u.bad_lookup);
-		} else if (_type == Object) {
-			_u.object = new ConfigObject(*o._u.object);
-		} else if (_type == Array) {
-			_u.array = new ConfigArray(*o._u.array);
-#endif
-		} else {
-			memcpy(&_u, &o._u, sizeof(_u));
-			#if !CONFIGURU_VALUE_SEMANTICS
-				if (_type == BadLookupType) { _u.bad_lookup->_ref_count += 1; }
-				if (_type == Array)         { _u.array->_ref_count      += 1; }
-				if (_type == Object)        { _u.object->_ref_count     += 1; }
-			#endif
-		}
-
-		if (o._doc) {
-			_doc      = o._doc;
-			_line     = o._line;
-		} else if (o._line != (unsigned)-1) {
-			_doc  = nullptr;
-			_line = o._line;
-		} else {
-			// Keep our _doc/_line
-		}
-
-		if (o._comments) {
-			_comments.reset(new ConfigComments(*o._comments));
-		} else {
-			// Keep our _comments
-		}
-		return *this;
-	}
-
 	Config& Config::operator=(Config&& o) noexcept
 	{
-		// Remember to remember where we come from even when assigned a new value.
-		std::swap(_type,     o._type);
-		std::swap(_u,        o._u);
+		if (&o == this) { return *this; }
+
+		std::swap(_type, o._type);
+		std::swap(_u,    o._u);
+
+		// Remember where we come from even when assigned a new value:
 		if (o._doc || o._line != (unsigned)-1) {
-			std::swap(_doc,      o._doc);
-			std::swap(_line,     o._line);
+			std::swap(_doc,  o._doc);
+			std::swap(_line, o._line);
 		}
+
 		if (o._comments) {
 			std::swap(_comments, o._comments);
 		}
 
 		return *this;
 	}
+
+	Config& Config::operator=(const Config& o)
+	{
+		if (&o == this) { return *this; }
+
+		free();
+
+		_type = o._type;
+
+		#if CONFIGURU_VALUE_SEMANTICS
+			if (_type == String) {
+				_u.str = new std::string(*o._u.str);
+			} else if (_type == BadLookupType) {
+				_u.bad_lookup = new BadLookupInfo(*o._u.bad_lookup);
+			} else if (_type == Object) {
+				_u.object = new ConfigObject(*o._u.object);
+			} else if (_type == Array) {
+				_u.array = new ConfigArray(*o._u.array);
+			} else {
+				memcpy(&_u, &o._u, sizeof(_u));
+			}
+		#else // !CONFIGURU_VALUE_SEMANTICS:
+			if (_type == String) {
+				_u.str = new std::string(*o._u.str);
+			} else {
+				memcpy(&_u, &o._u, sizeof(_u));
+				if (_type == BadLookupType) { ++_u.bad_lookup->_ref_count; }
+				if (_type == Array)         { ++_u.array->_ref_count; }
+				if (_type == Object)        { ++_u.object->_ref_count; }
+			}
+		#endif // !CONFIGURU_VALUE_SEMANTICS
+
+		// Remember where we come from even when assigned a new value:
+		if (o._doc || o._line != (unsigned)-1) {
+			_doc  = o._doc;
+			_line = o._line;
+		}
+
+		if (o._comments) {
+			_comments.reset(new ConfigComments(*o._comments));
+		}
+
+		return *this;
+	}
+
+	Config::~Config()
+	{
+		free();
+	}
+
+	void Config::free()
+	{
+		#if CONFIGURU_VALUE_SEMANTICS
+			if (_type == BadLookupType) {
+				delete _u.bad_lookup;
+			} else if (_type == Object) {
+				delete _u.object;
+			} else if (_type == Array) {
+				delete _u.array;
+			} else if (_type == String) {
+				delete _u.str;
+			}
+		#else // !CONFIGURU_VALUE_SEMANTICS:
+			if (_type == BadLookupType) {
+				if (--_u.bad_lookup->_ref_count == 0) {
+					delete _u.bad_lookup;
+				}
+			} else if (_type == Object) {
+				if (--_u.object->_ref_count == 0) {
+					delete _u.object;
+				}
+			} else if (_type == Array) {
+				if (--_u.array->_ref_count == 0) {
+					delete _u.array;
+				}
+			} else if (_type == String) {
+				delete _u.str;
+			}
+		#endif // !CONFIGURU_VALUE_SEMANTICS
+
+		_type = Uninitialized;
+
+		// Keep _doc, _line, _comments until overwritten/destructor.
+	}
+
+	// ------------------------------------------------------------------------
 
 	size_t Config::object_size() const
 	{
@@ -1387,35 +1438,6 @@ namespace configuru
 			case Object:        return "object";
 			default:            return "BROKEN Config";
 		}
-	}
-
-	void Config::free()
-	{
-		#if CONFIGURU_VALUE_SEMANTICS
-			if (_type == BadLookupType) {
-				delete _u.bad_lookup;
-			} else if (_type == Object) {
-				delete _u.object;
-			} else if (_type == Array) {
-				delete _u.array;
-		#else
-			if (_type == BadLookupType) {
-				if (--_u.bad_lookup->_ref_count == 0) {
-					delete _u.bad_lookup;
-				}
-			} else if (_type == Object) {
-				if (--_u.object->_ref_count == 0) {
-					delete _u.object;
-				}
-			} else if (_type == Array) {
-				if (--_u.array->_ref_count == 0) {
-					delete _u.array;
-				}
-		#endif
-		} else if (_type == String) {
-			delete _u.str;
-		}
-		_type = Uninitialized;
 	}
 
 	std::string where_is(const DocInfo_SP& doc, unsigned line)

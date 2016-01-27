@@ -4,6 +4,7 @@
 
 #define CONFIGURU_ASSERT(test) CHECK_F(test)
 
+#define CONFIGURU_IMPLICIT_CONVERSIONS 0
 #define CONFIGURU_VALUE_SEMANTICS 1
 #define CONFIGURU_IMPLEMENTATION 1
 #include "../configuru.hpp"
@@ -665,6 +666,18 @@ void test_copy_semantics()
 #endif
 }
 
+void test_swap()
+{
+    Config a{{ "message", "hello" }};
+    Config b{{ "salute", "goodbye" }};
+    a.swap(b);
+    CHECK_F(b["message"] == "hello");
+    CHECK_F(a["salute"] == "goodbye");
+    std::swap(a, b);
+    CHECK_F(a["message"] == "hello");
+    CHECK_F(b["salute"] == "goodbye");
+}
+
 int main(int argc, char* argv[])
 {
 	loguru::init(argc, argv);
@@ -703,4 +716,5 @@ int main(int argc, char* argv[])
 
 	run_unit_tests();
     test_copy_semantics();
+    test_swap();
 }
