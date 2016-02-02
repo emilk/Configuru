@@ -3074,7 +3074,11 @@ namespace configuru
 			w.write_object_contents(0, config);
 		} else {
 			w.write_value(0, config, true, true);
-			w._out += "\n"; // Good form
+
+			if (!options.compact())
+			{
+				w._out += "\n"; // Good form
+			}
 		}
 
 		return std::move(w._out);
