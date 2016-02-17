@@ -16,9 +16,10 @@
 #include "json.hpp"
 
 namespace fs = boost::filesystem;
+using namespace configuru;
 
-const std::string PASS_STRING = (std::string)loguru::terminal_green() + "PASS: " + loguru::terminal_reset();
-const std::string FAIL_STRING = (std::string)loguru::terminal_red()   + "FAIL: " + loguru::terminal_reset();
+const std::string PASS_STRING = std::string(loguru::terminal_green()) + "PASS: " + loguru::terminal_reset();
+const std::string FAIL_STRING = std::string(loguru::terminal_red())   + "FAIL: " + loguru::terminal_reset();
 
 struct Tester
 {
@@ -83,7 +84,7 @@ void test_code(Tester& tester, std::string test_name, bool should_pass, std::fun
 void test_parse(Tester& tester, FormatOptions options, bool should_pass, fs::path path)
 {
 	test_code(tester, path.filename().string(), should_pass, [&](){
-		configuru::parse_file(path.string(), options);
+		parse_file(path.string(), options);
 	});
 }
 
@@ -97,8 +98,8 @@ void test_all_in(Tester& tester, FormatOptions options, bool should_pass, fs::pa
 template<typename T>
 void test_roundtrip(Tester& tester, FormatOptions options, T value)
 {
-	std::string serialized = configuru::dump_string(Config(value), options);
-	Config parsed_config = configuru::parse_string(serialized.c_str(), options, "roundtrip");
+	std::string serialized = dump_string(Config(value), options);
+	auto parsed_config = parse_string(serialized.c_str(), options, "roundtrip");
 	T parsed_value = (T)parsed_config;
 	if (value == parsed_value) {
 		tester.print_pass(serialized);
@@ -110,7 +111,7 @@ void test_roundtrip(Tester& tester, FormatOptions options, T value)
 template<typename T>
 void test_writer(Tester& tester, FormatOptions options, std::string name, T value, const std::string& expected)
 {
-	std::string serialized = configuru::dump_string(Config(value), options);
+	std::string serialized = dump_string(Config(value), options);
 	if (serialized[serialized.size() - 1] == '\n') {
 		serialized.resize(serialized.size() - 1);
 	}
@@ -124,7 +125,7 @@ void test_writer(Tester& tester, FormatOptions options, std::string name, T valu
 void test_special(Tester& tester)
 {
 	LOG_SCOPE_FUNCTION(0);
-	auto format = configuru::JSON;
+	auto format = JSON;
 	format.enforce_indentation = true;
 	format.indentation = "\t";
 	test_parse(tester, format, false, "../../test_suite/special/two_spaces_indentation.json");
@@ -151,8 +152,8 @@ void test_roundtrip_string(Tester& tester)
 	LOG_SCOPE_FUNCTION(0);
 	auto test_roundtrip = [&](const std::string& json)
 	{
-		Config cfg = configuru::parse_string(json.c_str(), JSON, "roundtrip");
-		std::string serialized = configuru::dump_string(cfg, JSON);
+		Config cfg = parse_string(json.c_str(), JSON, "roundtrip");
+		std::string serialized = dump_string(cfg, JSON);
 		if (serialized[serialized.size() - 1] == '\n') {
 			serialized.resize(serialized.size() - 1);
 		}
@@ -183,7 +184,7 @@ void test_strings(Tester& tester)
 	LOG_SCOPE_FUNCTION(0);
 	auto test_string = [&](const std::string& json, const std::string& expected)
 	{
-		std::string output = (std::string)configuru::parse_string(json.c_str(), configuru::JSON, "string");
+		std::string output = parse_string(json.c_str(), JSON, "string").as_string();
 		if (output == expected) {
 			tester.print_pass(expected);
 		} else {
@@ -208,7 +209,7 @@ void test_doubles(Tester& tester)
 	LOG_SCOPE_FUNCTION(0);
 	auto test_double = [&](const std::string& json, const double expected)
 	{
-		double output = (double)configuru::parse_string(json.c_str(), configuru::JSON, "string");
+		double output = (double)parse_string(json.c_str(), JSON, "string");
 		if (output == expected) {
 			tester.print_pass(json);
 		} else {
@@ -329,7 +330,7 @@ void test_doubles(Tester& tester)
 void test_bad_usage(Tester& tester)
 {
 	LOG_SCOPE_FUNCTION(0);
-	auto config = configuru::parse_file("../../test_suite/special/config.json", configuru::JSON);
+	auto config = parse_file("../../test_suite/special/config.json", JSON);
 	test_code(tester, "access_float_as_float", true, [&]{
 		auto b = (float)config["pi"];
 		(void)b;
@@ -369,22 +370,22 @@ void run_unit_tests()
 	LOG_SCOPE_FUNCTION(0);
 	Tester tester;
 	std::cout << "JSON expected to pass:" << std::endl;
-	test_all_in(tester, configuru::JSON, true, "../../test_suite/json_pass",      ".json");
-	test_all_in(tester, configuru::JSON, true, "../../test_suite/json_only_pass", ".json");
+	test_all_in(tester, JSON, true, "../../test_suite/json_pass",      ".json");
+	test_all_in(tester, JSON, true, "../../test_suite/json_only_pass", ".json");
 
 	std::cout << std::endl << "JSON expected to fail:" << std::endl;
-	test_all_in(tester, configuru::JSON, false, "../../test_suite/json_fail", ".json");
-	test_all_in(tester, configuru::JSON, false, "../../test_suite/cfg_pass",  ".cfg");
-	test_all_in(tester, configuru::JSON, false, "../../test_suite/cfg_fail",  ".cfg");
+	test_all_in(tester, JSON, false, "../../test_suite/json_fail", ".json");
+	test_all_in(tester, JSON, false, "../../test_suite/cfg_pass",  ".cfg");
+	test_all_in(tester, JSON, false, "../../test_suite/cfg_fail",  ".cfg");
 
 	std::cout << std::endl << "CFG expected to pass:" << std::endl;
-	test_all_in(tester, configuru::CFG, true,  "../../test_suite/json_pass", ".json");
-	test_all_in(tester, configuru::CFG, true,  "../../test_suite/cfg_pass",  ".cfg");
+	test_all_in(tester, CFG, true,  "../../test_suite/json_pass", ".json");
+	test_all_in(tester, CFG, true,  "../../test_suite/cfg_pass",  ".cfg");
 
 	std::cout << std::endl << "CFG expected to fail:" << std::endl;
-	test_all_in(tester, configuru::CFG, false, "../../test_suite/json_only_pass", ".json");
-	test_all_in(tester, configuru::CFG, false, "../../test_suite/json_fail",      ".json");
-	test_all_in(tester, configuru::CFG, false, "../../test_suite/cfg_fail",       ".cfg");
+	test_all_in(tester, CFG, false, "../../test_suite/json_only_pass", ".json");
+	test_all_in(tester, CFG, false, "../../test_suite/json_fail",      ".json");
+	test_all_in(tester, CFG, false, "../../test_suite/cfg_fail",       ".cfg");
 	std::cout << std::endl << std::endl;
 
 	test_special(tester);
@@ -402,7 +403,7 @@ void run_unit_tests()
 	fflush(stdout);
 }
 
-const char* TEST_CFG = R"(
+static const char* TEST_CFG = R"(
 pi:    3.14,
 array: [1 2 3 4]
 obj:   {
@@ -414,34 +415,34 @@ obj:   {
 void parse_and_print()
 {
 	LOG_SCOPE_FUNCTION(0);
-	auto cfg = configuru::parse_string(TEST_CFG, configuru::CFG, "test_cfg");
+	auto cfg = parse_string(TEST_CFG, CFG, "test_cfg");
 	std::cout << "pi: " << cfg["pi"] << std::endl;
 	cfg.check_dangling();
 
 	std::cout << std::endl;
 	std::cout << "// CFG:" << std::endl;
-	std::cout << configuru::dump_string(cfg, configuru::CFG);
+	std::cout << dump_string(cfg, CFG);
 
 	std::cout << std::endl;
 	std::cout << "// JSON with tabs:" << std::endl;
-	std::cout << configuru::dump_string(cfg, configuru::JSON);
+	std::cout << dump_string(cfg, JSON);
 
 	std::cout << std::endl;
 	std::cout << "// JSON with two spaces:" << std::endl;
-	auto format = configuru::JSON;
+	auto format = JSON;
 	format.indentation = "  ";
-	std::cout << configuru::dump_string(cfg, format);
+	std::cout << dump_string(cfg, format);
 
 	std::cout << std::endl;
 	std::cout << "// JSON with keys sorted lexicographically:" << std::endl;
 	format.sort_keys = true;
-	std::cout << configuru::dump_string(cfg, format);
+	std::cout << dump_string(cfg, format);
 
 	std::cout << std::endl;
 	std::cout << "// Compact JSON:" << std::endl;
-	format = configuru::JSON;
+	format = JSON;
 	format.indentation = "";
-	std::cout << configuru::dump_string(cfg, format);
+	std::cout << dump_string(cfg, format);
 
 	std::cout << std::endl;
 }
@@ -499,7 +500,7 @@ void create()
 	};
 
 	// instead, you could also write (which looks very similar to the JSON above)
-	const configuru::Config cfg2 = {
+	const Config cfg2 = {
 		{ "pi",      3.141   },
 		{ "happy",   true    },
 		{ "name",    "Emil"  },
@@ -532,7 +533,7 @@ void test_iteration()
 	})";
 
 	{
-		const auto const_cfg = configuru::parse_string(TEST_CFG_2, configuru::JSON, "test_cfg_2");
+		const auto const_cfg = parse_string(TEST_CFG_2, JSON, "test_cfg_2");
 		const_cfg.check_dangling(); // Should warn about "value", "array" and "object"
 
 		std::cout << "object contents: " << std::endl;
@@ -545,7 +546,7 @@ void test_iteration()
 	}
 
 	{
-		auto mut_cfg = configuru::parse_string(TEST_CFG_2, configuru::JSON, "test_cfg_2");
+		auto mut_cfg = parse_string(TEST_CFG_2, JSON, "test_cfg_2");
 		for (auto& p : mut_cfg.as_object())
 		{
 			p.value() = p.key();
@@ -563,8 +564,8 @@ void test_comments()
 	auto in_path  = "../../test_suite/comments_in.cfg";
 	auto out_path = "../../test_suite/comments_out.cfg";
 	auto out_2_path = "../../test_suite/comments_out_2.cfg";
-	auto data = parse_file(in_path, configuru::CFG);
-	dump_file(out_path, data, configuru::CFG);
+	auto data = parse_file(in_path, CFG);
+	dump_file(out_path, data, CFG);
 
 	data["number"] = 42;
 	data["array"].push_back("new value");
@@ -577,7 +578,7 @@ void test_comments()
 	};
 	rearranged.erase("object");
 	rearranged.erase("array");
-	dump_file(out_2_path, rearranged, configuru::CFG);
+	dump_file(out_2_path, rearranged, CFG);
 }
 
 void test_conversions()
@@ -626,7 +627,7 @@ void test_conversions()
 #endif
 
 	auto parse_json = [](const std::string& json) {
-		return configuru::parse_string(json.c_str(), JSON, "");
+		return parse_string(json.c_str(), JSON, "");
 	};
 
 	auto strings = (std::vector<std::string>)parse_json(R"(["hello", "you"])");
@@ -711,8 +712,8 @@ int main(int argc, char* argv[])
 	};
 
 	std::cout << "nlohmann: \n"       << nlohmann::json(nlohmann_json).dump(4) << std::endl;
-	std::cout << "configuru JSON: \n" << configuru::dump_string(configuru_cfg, JSON) << std::endl;
-	std::cout << "configuru CFG: \n"  << configuru::dump_string(configuru_cfg, CFG)  << std::endl;
+	std::cout << "configuru JSON: \n" << dump_string(configuru_cfg, JSON) << std::endl;
+	std::cout << "configuru CFG: \n"  << dump_string(configuru_cfg, CFG)  << std::endl;
 
 	run_unit_tests();
     test_copy_semantics();

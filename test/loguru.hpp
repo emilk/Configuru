@@ -26,19 +26,20 @@ Website: www.ilikebigbits.com
 	* Version 0.7 - 2015-10-27 - Signals
 	* Version 0.8 - 2015-10-30 - Color logging.
 	* Version 0.9 - 2015-11-26 - ABORT_S and proper handling of FATAL
+	* Verison 1.0 - 2015-02-14 - ERROR_CONTEXT
 
 # Compiling
-	Just include <loguru/loguru.hpp> where you want to use Loguru.
+	Just include <loguru.hpp> where you want to use Loguru.
 	Then, in one .cpp file:
 		#define LOGURU_IMPLEMENTATION
-		#include <loguru/loguru.hpp>
+		#include <loguru.hpp>
 	Make sure you compile with -std=c++11 -lpthread -ldl
 
 # Usage
-	#include <loguru/loguru.hpp>
+	#include <loguru.hpp>
 
-	// Optional, but useful to timestamp the start of the log.
-	// Will also detect verbosity level on comamnd line as -v.
+	// Optional, but useful to time-stamp the start of the log.
+	// Will also detect verbosity level on command line as -v.
 	loguru::init(argc, argv);
 
 	// Put every log message in "everything.log":
@@ -75,7 +76,7 @@ Website: www.ilikebigbits.com
 	// Turn off writing err/warn in red:
 	loguru::g_colorlogtostderr = false;
 
-	// Thow exceptions instead of aborting on CHECK fails:
+	// Throw exceptions instead of aborting on CHECK fails:
 	loguru::set_fatal_handler([](const loguru::Message& message){
 		throw std::runtime_error(message.message);
 	})
@@ -83,15 +84,15 @@ Website: www.ilikebigbits.com
 	If you prefer logging with streams:
 
 	#define LOGURU_WITH_STREAMS 1
-	#include <loguru/loguru.hpp>
+	#include <loguru.hpp>
 	...
 	LOG_S(INFO) << "Look at my custom object: " << a.cross(b);
 	CHECK_EQ_S(pi, 3.14) << "Maybe it is closer to " << M_PI;
 
-	Before including <loguru/loguru.hpp> you may optionally want to define the following to 1:
+	Before including <loguru.hpp> you may optionally want to define the following to 1:
 
 	LOGURU_REDEFINE_ASSERT:
-		Redefine "assert" call loguru version (!NDEBUG only).
+		Redefine "assert" call Loguru version (!NDEBUG only).
 
 	LOGURU_WITH_STREAMS:
 		Add support for _S versions for all LOG and CHECK functions:
@@ -102,7 +103,12 @@ Website: www.ilikebigbits.com
 	LOGURU_REPLACE_GLOG:
 		Make Loguru mimic GLOG as close as possible,
 		including #defining LOG, CHECK, FLAGS_v etc.
-		LOGURU_REPLACE_GLOG imlies LOGURU_WITH_STREAMS.
+		LOGURU_REPLACE_GLOG implies LOGURU_WITH_STREAMS.
+
+	You can also configure:
+	LOGURU_FLUSH_INTERVAL_MS:
+		If set, Loguru will flush outputs every LOGURU_FLUSH_INTERVAL_MS ms.
+		If not set, Loguru will flush on every line.
 
 # Notes:
 	* Any arguments to CHECK:s are only evaluated once.
@@ -112,6 +118,49 @@ Website: www.ilikebigbits.com
 
 #ifndef LOGURU_HEADER_HPP
 #define LOGURU_HEADER_HPP
+
+// ----------------------------------------------------------------------------
+
+#ifndef LOGURU_SCOPE_TEXT_SIZE
+	// Maximum length of text that can be printed by a LOG_SCOPE.
+	// This should be long enough to get most things, but short enough not to clutter the stack.
+	#define LOGURU_SCOPE_TEXT_SIZE 196
+#endif
+
+#ifndef LOGURU_CATCH_SIGABRT
+	// Should Loguru catch SIGABRT to print stack trace etc?
+	#define LOGURU_CATCH_SIGABRT 1
+#endif
+
+// The data of ERROR_CONTEXT must fit in LOGURU_EC_DATA_SIZE bytes.
+// If your data does not fit, maybe a pointer to it will?
+#ifndef LOGURU_EC_DATA_SIZE
+	#define LOGURU_EC_DATA_SIZE sizeof(long double)
+#endif
+
+#ifndef LOGURU_REDEFINE_ASSERT
+	#define LOGURU_REDEFINE_ASSERT 0
+#endif
+
+#ifndef LOGURU_WITH_STREAMS
+	#define LOGURU_WITH_STREAMS 0
+#endif
+
+#ifndef LOGURU_REPLACE_GLOG
+	#define LOGURU_REPLACE_GLOG 0
+#endif
+
+// --------------------------------------------------------------------
+// Utility macros
+
+#define LOGURU_CONCATENATE_IMPL(s1, s2) s1 ## s2
+#define LOGURU_CONCATENATE(s1, s2) LOGURU_CONCATENATE_IMPL(s1, s2)
+
+#ifdef __COUNTER__
+#   define LOGURU_ANONYMOUS_VARIABLE(str) LOGURU_CONCATENATE(str, __COUNTER__)
+#else
+#   define LOGURU_ANONYMOUS_VARIABLE(str) LOGURU_CONCATENATE(str, __LINE__)
+#endif
 
 #if defined(__clang__) || defined(__GNUC__)
 	// Helper macro for declaring functions as having similar signature to printf.
@@ -132,6 +181,8 @@ Website: www.ilikebigbits.com
 #define LOGURU_PREDICT_FALSE(x) (__builtin_expect(x,     0))
 #define LOGURU_PREDICT_TRUE(x)  (__builtin_expect(!!(x), 1))
 
+// --------------------------------------------------------------------
+
 namespace loguru
 {
 	// Simple RAII ownership of a char*.
@@ -140,12 +191,17 @@ namespace loguru
 	public:
 		explicit Text(char* owned_str) : _str(owned_str) {}
 		~Text();
-		Text(Text&& t);
+		Text(Text&& t)
+		{
+			_str = t._str;
+			t._str = nullptr;
+		}
 		Text(Text& t) = delete;
 		Text& operator=(Text& t) = delete;
 		void operator=(Text&& t) = delete;
 
 		const char* c_str() const { return _str; }
+		bool empty() const { return _str == nullptr || *_str == '\0'; }
 
 	private:
 		char* _str;
@@ -218,6 +274,7 @@ namespace loguru
 	// May not throw!
 	typedef void (*log_handler_t)(void* user_data, const Message& message);
 	typedef void (*close_handler_t)(void* user_data);
+	typedef void (*flush_handler_t)(void* user_data);
 
 	// May throw if that's how you'd like to handle your errors.
 	typedef void (*fatal_handler_t)(const Message& message);
@@ -236,6 +293,9 @@ namespace loguru
 	   That is, if argv[0] is "../foo/app" this will return "app".
 	*/
 	const char* argv0_filename();
+
+	// Returns the part of the path after the last / or \ (if any).
+	const char* filename(const char* path);
 
 	// Writes date and time with millisecond precision, e.g. "20151017_161503.123"
 	void write_date_time(char* buff, unsigned buff_size);
@@ -266,7 +326,9 @@ namespace loguru
 		Useful for displaying messages on-screen in a game, for example.
 	*/
 	void add_callback(const char* id, log_handler_t callback, void* user_data,
-					  Verbosity verbosity, close_handler_t on_close = nullptr);
+					  Verbosity verbosity,
+					  close_handler_t on_close = nullptr,
+					  flush_handler_t on_flush = nullptr);
 	void remove_callback(const char* id);
 
 	// Returns the maximum of g_stderr_verbosity and all file/custom outputs.
@@ -298,13 +360,18 @@ namespace loguru
 		unsigned    _line;
 		bool        _indent_stderr; // Did we?
 		long long   _start_time_ns;
-		char        _name[128]; // Long enough to get most things, short enough not to clutter the stack.
+		char        _name[LOGURU_SCOPE_TEXT_SIZE];
 	};
 
 	// Marked as 'noreturn' for the benefit of the static analyzer and optimizer.
 	// stack_trace_skip is the number of extrace stack frames to skip above log_and_abort.
-	void log_and_abort(int stack_trace_skip, const char* expr, const char* file, unsigned line, LOGURU_FORMAT_STRING_TYPE format, ...) LOGURU_PRINTF_LIKE(5, 6) LOGURU_NORETURN;
-	void log_and_abort(int stack_trace_skip, const char* expr, const char* file, unsigned line) LOGURU_NORETURN;
+	LOGURU_NORETURN void log_and_abort(int stack_trace_skip, const char* expr, const char* file, unsigned line, LOGURU_FORMAT_STRING_TYPE format, ...) LOGURU_PRINTF_LIKE(5, 6);
+	LOGURU_NORETURN void log_and_abort(int stack_trace_skip, const char* expr, const char* file, unsigned line);
+
+	// Flush output to stderr and files.
+	// If LOGURU_FLUSH_INTERVAL_MS is set, this will be called automatically this often.
+	// If not set, you do not need to call this at al.
+	void flush();
 
 	template<class T> inline Text format_value(const T&)                    { return strprintf("N/A");     }
 	template<>        inline Text format_value(const char& v)               { return strprintf("%c",   v); }
@@ -328,6 +395,23 @@ namespace loguru
 	   For instance, the default skip (1) means:
 	   don't include the call to loguru::stacktrace in the stack trace. */
 	Text stacktrace(int skip = 1);
+
+	/*  Add a string to be replaced with something else in the stack output.
+
+		For instance, instead of having a stack trace look like this:
+			0x41f541 some_function(std::basic_ofstream<char, std::char_traits<char> >&)
+		You can clean it up with:
+			auto verbose_type_name = loguru::demangle(typeid(std::ofstream).name());
+			loguru::add_stack_cleanup(verbose_type_name.c_str(); "std::ofstream");
+		So the next time you will instead see:
+			0x41f541 some_function(std::ofstream&)
+
+		`replace_with_this` must be shorter than `find_this`.
+	*/
+	void add_stack_cleanup(const char* find_this, const char* replace_with_this);
+
+	// Example: demangle(typeid(std::ofstream).name()) -> "std::basic_ofstream<char, std::char_traits<char> >"
+	Text demangle(const char* name);
 
 	// ------------------------------------------------------------------------
 	/*
@@ -373,14 +457,153 @@ namespace loguru
 
 	// You should end each line with this!
 	const char* terminal_reset();
+
+	// --------------------------------------------------------------------
+	// Error-context related:
+
+	struct EcData { char data[LOGURU_EC_DATA_SIZE]; };
+
+	struct StringStream;
+
+	// Use this in your ec_printer_impl overload.
+	void stream_print(StringStream* string_stream, const char* text);
+
+
+	template<typename T>
+	inline EcData as_ec_data(const T& value)
+	{
+		static_assert(sizeof(T) <= sizeof(EcData),
+			"Data too large - consider using a pointer or increase LOGURU_EC_DATA_SIZE.");
+		return *reinterpret_cast<const EcData*>(&value);
+	}
+
+	template<typename T>
+	inline T from_ec_data(const EcData& ec_data)
+	{
+		static_assert(sizeof(T) <= sizeof(EcData),
+			"Data too large - consider using a pointer or increase LOGURU_EC_DATA_SIZE.");
+		return *reinterpret_cast<const T*>(&ec_data);
+	}
+
+	using EcPrinter = void(*)(StringStream* string_stream, EcData ec_data);
+
+	struct EcPayload
+	{
+		EcData    _ec_data;
+		EcPrinter _printer;
+	};
+
+	struct ErrorContextScope
+	{
+		ErrorContextScope(const char* file, unsigned line, const char* desc, EcPayload&& se);
+		~ErrorContextScope();
+		ErrorContextScope(ErrorContextScope&) = delete;
+		ErrorContextScope(ErrorContextScope&&) = delete;
+		ErrorContextScope& operator=(ErrorContextScope&) = delete;
+		ErrorContextScope& operator=(ErrorContextScope&&) = delete;
+	};
+
+	/* 	A stack trace gives you the names of the function at the point of a crash.
+	    With ERROR_CONTEXT, you can also get the values of select local variables.
+	    Usage:
+
+	    void process_customers(const std::string& filename)
+	    {
+	        ERROR_CONTEXT("Processing file", filename.c_str());
+	        for (int customer_index : ...)
+	        {
+	        	ERROR_CONTEXT("Customer index", customer_index);
+	        	...
+	        }
+	    }
+
+	    The context is in effect during the scope of the ERROR_CONTEXT.
+	    To get the contents of the stack, use get_error_context().
+
+	    Example result:
+
+	    ------------------------------------------------
+	    [ErrorContext]                main.cpp:416   Processing file:    'customers.json'
+	    [ErrorContext]                main.cpp:417   Customer index:     42
+	    ------------------------------------------------
+
+	    Error contexts are printed automatically on crashes.
+	*/
+	#define ERROR_CONTEXT(descr, data)                                              \
+		loguru::ErrorContextScope LOGURU_ANONYMOUS_VARIABLE(error_context_scope_)(  \
+			__FILE__, __LINE__, descr, loguru::make_ec_payload(data)                \
+		)
+
+	// Get a string describing the current stack of error context. Empty string if there is none.
+	Text get_error_context();
+
+	// These are called when the get_error_context() is called.
+	template<typename T>
+	void ec_printer_impl(StringStream* string_stream, T ec_data);
+
+	template<typename T>
+	inline void ec_format(StringStream* string_stream, EcData ec_data)
+	{
+		ec_printer_impl(string_stream, from_ec_data<T>(ec_data));
+	}
+
+	// ------------------------------------------------------------------------
+
+	#define LOGURU_DECLARE_EC_TYPE(Type)                   \
+		inline EcPayload make_ec_payload(Type data) {       \
+			return { as_ec_data(data), ec_format<Type> };  \
+		}
+
+	LOGURU_DECLARE_EC_TYPE(const char*);
+	LOGURU_DECLARE_EC_TYPE(char);
+	LOGURU_DECLARE_EC_TYPE(int);
+	LOGURU_DECLARE_EC_TYPE(unsigned int);
+	LOGURU_DECLARE_EC_TYPE(long);
+	LOGURU_DECLARE_EC_TYPE(unsigned long);
+	LOGURU_DECLARE_EC_TYPE(long long);
+	LOGURU_DECLARE_EC_TYPE(unsigned long long);
+	LOGURU_DECLARE_EC_TYPE(float);
+	LOGURU_DECLARE_EC_TYPE(double);
+	LOGURU_DECLARE_EC_TYPE(long double);
+
+	/*
+	You can add ERROR_CONTEXT support for your own types with the help of
+	LOGURU_DECLARE_EC_TYPE and ec_printer_impl. Here's how:
+
+	some.hpp:
+		namespace loguru {
+			LOGURU_DECLARE_EC_TYPE(MySmallType)
+			LOGURU_DECLARE_EC_TYPE(const MyBigType*)
+		} // namespace loguru
+
+	some.cpp:
+		namespace loguru {
+			template<>
+			void ec_printer_impl(StringStream* string_stream, MySmallType value)
+			{
+				// Called only when needed, i.e. on a crash.
+				std::string str = value.as_string(); // Format 'value' here somehow.
+				stream_print(string_stream, str.c_str());
+			}
+
+			template<>
+			void ec_printer_impl(StringStream* string_stream, const MyBigType* value)
+			{
+				// Called only when needed, i.e. on a crash.
+				std::string str = value->as_string(); // Format 'value' here somehow.
+				stream_print(string_stream, str.c_str());
+			}
+		} // namespace loguru
+
+	Any file that include some.hpp:
+		void foo(MySmallType small, const MyBigType& big)
+		{
+			ERROR_CONTEXT("Small", small); // Copy ´small` by value.
+			ERROR_CONTEXT("Big",   &big);  // `big` should not change during this scope!
+			....
+		}
+	*/
 } // namespace loguru
-
-// --------------------------------------------------------------------
-// Utitlity macros
-
-// Used for giving a unique name to a RAII-object
-#define LOGURU_GIVE_UNIQUE_NAME(arg1, arg2) LOGURU_STRING_JOIN(arg1, arg2)
-#define LOGURU_STRING_JOIN(arg1, arg2) arg1 ## arg2
 
 // --------------------------------------------------------------------
 // Logging macros
@@ -402,7 +625,7 @@ namespace loguru
 	VLOG_IF_F(loguru::Verbosity_ ## verbosity_name, cond, __VA_ARGS__)
 
 #define VLOG_SCOPE_F(verbosity, ...)                                                               \
-	loguru::LogScopeRAII LOGURU_GIVE_UNIQUE_NAME(error_context_RAII_, __LINE__) =                  \
+	loguru::LogScopeRAII LOGURU_ANONYMOUS_VARIABLE(error_context_RAII_) =                  \
 	((verbosity) > loguru::current_verbosity_cutoff()) ? loguru::LogScopeRAII() :                  \
 	loguru::LogScopeRAII{verbosity, __FILE__, __LINE__, __VA_ARGS__}
 
@@ -464,6 +687,7 @@ namespace loguru
 #define CHECK_GE_F(a, b, ...) CHECK_OP_F(a, b, >=, ##__VA_ARGS__)
 
 #ifndef NDEBUG
+	// Debug:
 	#define DLOG_F(verbosity_name, ...)     LOG_F(verbosity_name, __VA_ARGS__)
 	#define DVLOG_F(verbosity, ...)         VLOG_F(verbosity, __VA_ARGS__)
 	#define DLOG_IF_F(verbosity_name, ...)  LOG_IF_F(verbosity_name, __VA_ARGS__)
@@ -479,6 +703,7 @@ namespace loguru
 	#define DCHECK_GT_F(a, b, ...)          CHECK_GT_F(a, b, ##__VA_ARGS__)
 	#define DCHECK_GE_F(a, b, ...)          CHECK_GE_F(a, b, ##__VA_ARGS__)
 #else // NDEBUG
+	// Release:
 	#define DLOG_F(verbosity_name, ...)
 	#define DVLOG_F(verbosity, ...)
 	#define DLOG_IF_F(verbosity_name, ...)
@@ -498,6 +723,7 @@ namespace loguru
 #ifdef LOGURU_REDEFINE_ASSERT
 	#undef assert
 	#ifndef NDEBUG
+		// Debug:
 		#define assert(test) CHECK_WITH_INFO_F(!!(test), #test) // HACK
 	#else
 		#define assert(test)
@@ -525,11 +751,7 @@ namespace loguru
 	{
 	public:
 		StreamLogger(Verbosity verbosity, const char* file, unsigned line) : _verbosity(verbosity), _file(file), _line(line) {}
-		~StreamLogger()
-		{
-			auto message = this->str();
-			log(_verbosity, _file, _line, "%s", message.c_str());
-		}
+		~StreamLogger();
 
 	private:
 		Verbosity   _verbosity;
@@ -541,11 +763,7 @@ namespace loguru
 	{
 	public:
 		AbortLogger(const char* expr, const char* file, unsigned line) : _expr(expr), _file(file), _line(line) {}
-		~AbortLogger() LOGURU_NORETURN
-		{
-			auto message = this->str();
-			loguru::log_and_abort(1, _expr, _file, _line, "%s", message.c_str());
-		}
+		LOGURU_NORETURN ~AbortLogger();
 
 	private:
 		const char* _expr;
@@ -645,6 +863,7 @@ namespace loguru
 #define CHECK_GT_S(expr1, expr2) CHECK_OP_S(check_GT_impl, expr1, > , expr2)
 
 #ifndef NDEBUG
+	// Debug:
 	#define DVLOG_IF_S(verbosity, cond)     VLOG_IF_S(verbosity, cond)
 	#define DLOG_IF_S(verbosity_name, cond) LOG_IF_S(verbosity_name, cond)
 	#define DVLOG_S(verbosity)              VLOG_S(verbosity)
@@ -658,6 +877,7 @@ namespace loguru
 	#define DCHECK_GT_S(a, b)               CHECK_GT_S(a, b)
 	#define DCHECK_GE_S(a, b)               CHECK_GE_S(a, b)
 #else // NDEBUG
+	// Release:
 	#define DVLOG_IF_S(verbosity, cond)                                                     \
 		(true || verbosity > loguru::current_verbosity_cutoff() || (cond) == false)                        \
 			? (void)0                                                                       \
@@ -666,14 +886,14 @@ namespace loguru
 	#define DLOG_IF_S(verbosity_name, cond) DVLOG_IF_S(loguru::Verbosity_ ## verbosity_name, cond)
 	#define DVLOG_S(verbosity)              DVLOG_IF_S(verbosity, true)
 	#define DLOG_S(verbosity_name)          DVLOG_S(loguru::Verbosity_ ## verbosity_name)
-	#define DCHECK_S(cond)                  while (false) CHECK(cond)
-	#define DCHECK_NOTNULL_S(x)             while (false) CHECK((x) != nullptr)
-	#define DCHECK_EQ_S(a, b)               while (false) CHECK_EQ_S(a, b)
-	#define DCHECK_NE_S(a, b)               while (false) CHECK_NE_S(a, b)
-	#define DCHECK_LT_S(a, b)               while (false) CHECK_LT_S(a, b)
-	#define DCHECK_LE_S(a, b)               while (false) CHECK_LE_S(a, b)
-	#define DCHECK_GT_S(a, b)               while (false) CHECK_GT_S(a, b)
-	#define DCHECK_GE_S(a, b)               while (false) CHECK_GE_S(a, b)
+	#define DCHECK_S(cond)                  CHECK_S(true || (cond))
+	#define DCHECK_NOTNULL_S(x)             CHECK_S(true || (x) != nullptr)
+	#define DCHECK_EQ_S(a, b)               CHECK_S(true || (a) == (b))
+	#define DCHECK_NE_S(a, b)               CHECK_S(true || (a) != (b))
+	#define DCHECK_LT_S(a, b)               CHECK_S(true || (a) <  (b))
+	#define DCHECK_LE_S(a, b)               CHECK_S(true || (a) <= (b))
+	#define DCHECK_GT_S(a, b)               CHECK_S(true || (a) >  (b))
+	#define DCHECK_GE_S(a, b)               CHECK_S(true || (a) >= (b))
 #endif // NDEBUG
 
 #if LOGURU_REPLACE_GLOG
@@ -748,7 +968,7 @@ namespace loguru
 
 /* In one of your .cpp files you need to do the following:
 #define LOGURU_IMPLEMENTATION
-#include <loguru/loguru.hpp>
+#include <loguru.hpp>
 
 This will define all the Loguru functions so that the linker may find them.
 */
@@ -768,10 +988,16 @@ This will define all the Loguru functions so that the linker may find them.
 #include <string>
 #include <vector>
 
+#ifdef LOGURU_FLUSH_INTERVAL_MS
+	#include <thread>
+#endif
+
 #ifdef _MSC_VER
 	#include <direct.h>
 #else
+	#include <signal.h>
 	#include <sys/stat.h> // mkdir
+	#include <unistd.h>   // STDERR_FILENO
 #endif
 
 // TODO: use defined(_POSIX_VERSION) for some of these things?
@@ -802,6 +1028,10 @@ This will define all the Loguru functions so that the linker may find them.
 	#endif
 #endif
 
+#ifndef LOGURU_PTLS_NAMES
+   #define LOGURU_PTLS_NAMES 0
+#endif
+
 namespace loguru
 {
 	using namespace std::chrono;
@@ -813,10 +1043,14 @@ namespace loguru
 		void*           user_data;
 		Verbosity       verbosity; // Does not change!
 		close_handler_t close;
-		int             indentation;
+		flush_handler_t flush;
+		unsigned        indentation;
 	};
 
 	using CallbackVec = std::vector<Callback>;
+
+	using StringPair     = std::pair<std::string, std::string>;
+	using StringPairList = std::vector<StringPair>;
 
 	const auto SCOPE_TIME_PRECISION = 3; // 3=ms, 6≈us, 9=ns
 
@@ -826,16 +1060,22 @@ namespace loguru
 	bool      g_alsologtostderr  = true;
 	bool      g_colorlogtostderr = true;
 
-	std::recursive_mutex s_mutex;
-	Verbosity            s_max_out_verbosity = Verbosity_NOTHING;
-	std::string          s_argv0_filename;
-	std::string          s_file_arguments;
-	CallbackVec          s_callbacks;
-	fatal_handler_t      s_fatal_handler   = nullptr;
-	bool                 s_strip_file_path = true;
-	std::atomic<int>     s_stderr_indentation { 0 };
+	static std::recursive_mutex  s_mutex;
+	static Verbosity             s_max_out_verbosity = Verbosity_NOTHING;
+	static std::string           s_argv0_filename;
+	static std::string           s_file_arguments;
+	static CallbackVec           s_callbacks;
+	static fatal_handler_t       s_fatal_handler   = nullptr;
+	static StringPairList        s_user_stack_cleanups;
+	static bool                  s_strip_file_path = true;
+	static std::atomic<unsigned> s_stderr_indentation { 0 };
 
-	const bool           s_terminal_has_color = [](){
+#ifdef LOGURU_FLUSH_INTERVAL_MS
+	static std::thread* s_flush_thread   = nullptr;
+	static bool         s_needs_flushing = false;
+#endif
+
+	static const bool s_terminal_has_color = [](){
 		#ifdef _MSC_VER
 			return false;
 		#else
@@ -852,8 +1092,8 @@ namespace loguru
 		#endif
 	}();
 
-	const int THREAD_NAME_WIDTH = 16;
-	const char* PREAMBLE_EXPLAIN = "date       time         ( uptime  ) [ thread name/id ]                   file:line     v| ";
+	const auto THREAD_NAME_WIDTH = 16;
+	const auto PREAMBLE_EXPLAIN  = "date       time         ( uptime  ) [ thread name/id ]                   file:line     v| ";
 
 	#if LOGURU_PTLS_NAMES
 		pthread_once_t s_pthread_key_once = PTHREAD_ONCE_INIT;
@@ -897,7 +1137,9 @@ namespace loguru
 		FILE* file = reinterpret_cast<FILE*>(user_data);
 		fprintf(file, "%s%s%s%s\n",
 			message.preamble, message.indentation, message.prefix, message.message);
-		fflush(file);
+		#ifndef LOGURU_FLUSH_INTERVAL_MS
+			fflush(file);
+		#endif
 	}
 
 	void file_close(void* user_data)
@@ -906,17 +1148,19 @@ namespace loguru
 		fclose(file);
 	}
 
+	void file_flush(void* user_data)
+	{
+		FILE* file = reinterpret_cast<FILE*>(user_data);
+		fflush(file);
+	}
+
 	// ------------------------------------------------------------------------------
 
 	// Helpers:
 
 	Text::~Text() { free(_str); }
-	Text::Text(Text&& t)
-	{
-		_str = t._str;
-		t._str = nullptr;
-	}
 
+	LOGURU_PRINTF_LIKE(1, 0)
 	static Text strprintfv(const char* format, va_list vlist)
 	{
 #ifdef _MSC_VER
@@ -945,7 +1189,7 @@ namespace loguru
 	// Overloaded for variadic template matching.
 	Text strprintf()
 	{
-		return Text((char*)calloc(1, 1));
+		return Text(static_cast<char*>(calloc(1, 1)));
 	}
 
 	const char* indentation(unsigned depth)
@@ -998,7 +1242,8 @@ namespace loguru
 		return duration_cast<nanoseconds>(high_resolution_clock::now().time_since_epoch()).count();
 	}
 
-	inline const char* filename(const char* path)
+	// Returns the part of the path after the last / or \ (if any).
+	const char* filename(const char* path)
 	{
 		for (auto ptr = path; *ptr; ++ptr) {
 			if (*ptr == '/' || *ptr == '\\') {
@@ -1013,6 +1258,7 @@ namespace loguru
 	static void on_atexit()
 	{
 		LOG_F(INFO, "atexit");
+		flush();
 	}
 
 	void install_signal_handlers();
@@ -1063,14 +1309,14 @@ namespace loguru
 		atexit(on_atexit);
 	}
 
-	void write_date_time(char* buff, unsigned buff_size)
+	void write_date_time(char* buff, size_t buff_size)
 	{
 		auto now = system_clock::now();
-		time_t ms_since_epoch = duration_cast<milliseconds>(now.time_since_epoch()).count();
-		time_t sec_since_epoch = ms_since_epoch / 1000;
+		long long ms_since_epoch = duration_cast<milliseconds>(now.time_since_epoch()).count();
+		time_t sec_since_epoch = time_t(ms_since_epoch / 1000);
 		tm time_info;
 		localtime_r(&sec_since_epoch, &time_info);
-		snprintf(buff, buff_size, "%04d%02d%02d_%02d%02d%02d.%03ld",
+		snprintf(buff, buff_size, "%04d%02d%02d_%02d%02d%02d.%03lld",
 			1900 + time_info.tm_year, 1 + time_info.tm_mon, time_info.tm_mday,
 			time_info.tm_hour, time_info.tm_min, time_info.tm_sec, ms_since_epoch % 1000);
 	}
@@ -1079,7 +1325,7 @@ namespace loguru
 
 	const char* home_dir()
 	{
-		#if _WIN32
+		#ifdef _WIN32
 			auto user_profile = getenv("USERPROFILE");
 			CHECK_F(user_profile != nullptr, "Missing USERPROFILE");
 			return user_profile;
@@ -1099,7 +1345,7 @@ namespace loguru
 		}
 
 		// Check for terminating /
-		auto n = strlen(buff);
+		size_t n = strlen(buff);
 		if (n != 0) {
 			if (buff[n - 1] != '/') {
 				CHECK_F(n + 2 < buff_size, "Filename buffer too small");
@@ -1164,7 +1410,7 @@ namespace loguru
 			LOG_F(ERROR, "Failed to open '%s'", path);
 			return false;
 		}
-		add_callback(path, file_log, file, verbosity, file_close);
+		add_callback(path, file_log, file, verbosity, file_close, file_flush);
 
 		if (mode == FileMode::Append) {
 			fprintf(file, "\n\n\n\n\n");
@@ -1185,6 +1431,17 @@ namespace loguru
 		s_fatal_handler = handler;
 	}
 
+	void add_stack_cleanup(const char* find_this, const char* replace_with_this)
+	{
+		if (strlen(find_this) <= strlen(replace_with_this))
+		{
+			LOG_F(WARNING, "add_stack_cleanup: the replacement should be shorter than the pattern!");
+			return;
+		}
+
+		s_user_stack_cleanups.push_back(StringPair(find_this, replace_with_this));
+	}
+
 	static void on_callback_change()
 	{
 		s_max_out_verbosity = Verbosity_NOTHING;
@@ -1195,10 +1452,10 @@ namespace loguru
 	}
 
 	void add_callback(const char* id, log_handler_t callback, void* user_data,
-					  Verbosity verbosity, close_handler_t on_close)
+					  Verbosity verbosity, close_handler_t on_close, flush_handler_t on_flush)
 	{
 		std::lock_guard<std::recursive_mutex> lock(s_mutex);
-		s_callbacks.push_back(Callback{id, callback, user_data, verbosity, on_close, 0});
+		s_callbacks.push_back(Callback{id, callback, user_data, verbosity, on_close, on_flush, 0});
 		on_callback_change();
 	}
 
@@ -1251,22 +1508,20 @@ namespace loguru
 	// Stack traces
 
 #if LOGURU_STACKTRACES
-	std::string demangle(const char* name)
+	Text demangle(const char* name)
 	{
 		int status = -1;
 		char* demangled = abi::__cxa_demangle(name, 0, 0, &status);
-		std::string result = (status == 0 ? demangled : name);
-		free(demangled);
+		Text result{status == 0 ? demangled : strdup(name)};
 		return result;
 	}
 
 	template <class T>
 	std::string type_name() {
-		return demangle(typeid(T).name());
+		auto demangled = demangle(typeid(T).name());
+		return demangled.c_str();
 	}
 
-	using StringPair     = std::pair<std::string, std::string>;
-	using StringPairList = std::vector<StringPair>;
 	static const StringPairList REPLACE_LIST = {
 		{ type_name<std::string>(),    "std::string"    },
 		{ type_name<std::wstring>(),   "std::wstring"   },
@@ -1277,21 +1532,27 @@ namespace loguru
 		{ "__cdecl ",                  ""               },
 	};
 
-	std::string prettify_stacktrace(const std::string& input)
+	void do_replacements(const StringPairList& replacements, std::string& str)
 	{
-		std::string output = input;
-
-		for (auto&& p : REPLACE_LIST) {
+		for (auto&& p : replacements) {
 			if (p.first.size() <= p.second.size()) {
 				// On gcc, "type_name<std::string>()" is "std::string"
 				continue;
 			}
 
 			size_t it;
-			while ((it=output.find(p.first)) != std::string::npos) {
-				output.replace(it, p.first.size(), p.second);
+			while ((it=str.find(p.first)) != std::string::npos) {
+				str.replace(it, p.first.size(), p.second);
 			}
 		}
+	}
+
+	std::string prettify_stacktrace(const std::string& input)
+	{
+		std::string output = input;
+
+		do_replacements(s_user_stack_cleanups, output);
+		do_replacements(REPLACE_LIST, output);
 
 		try {
 			std::regex std_allocator_re(R"(,\s*std::allocator<[^<>]+>)");
@@ -1330,7 +1591,7 @@ namespace loguru
 						 i - skip, int(2 + sizeof(void*) * 2), callstack[i],
 						 status == 0 ? demangled :
 						 info.dli_sname == 0 ? symbols[i] : info.dli_sname,
-						 (char *)callstack[i] - (char *)info.dli_saddr);
+						 static_cast<char*>(callstack[i]) - static_cast<char*>(info.dli_saddr));
 				free(demangled);
 			} else {
 				snprintf(buf, sizeof(buf), "%-3d %*p %s\n",
@@ -1352,6 +1613,11 @@ namespace loguru
 	}
 
 #else // LOGURU_STACKTRACES
+	Text demangle(const char* name)
+	{
+		return name;
+	}
+
 	std::string stacktrace_as_stdstring(int)
 	{
 		#warning "Loguru: No stacktraces available on this platform"
@@ -1371,8 +1637,8 @@ namespace loguru
 	static void print_preamble(char* out_buff, size_t out_buff_size, Verbosity verbosity, const char* file, unsigned line)
 	{
 		auto now = system_clock::now();
-		time_t ms_since_epoch = duration_cast<milliseconds>(now.time_since_epoch()).count();
-		time_t sec_since_epoch = ms_since_epoch / 1000;
+		long long ms_since_epoch = duration_cast<milliseconds>(now.time_since_epoch()).count();
+		time_t sec_since_epoch = time_t(ms_since_epoch / 1000);
 		tm time_info;
 		localtime_r(&sec_since_epoch, &time_info);
 
@@ -1400,7 +1666,7 @@ namespace loguru
 				#else
 					uint64_t thread_id = thread;
 				#endif
-				snprintf(thread_name, sizeof(thread_name), "%16X", (unsigned)thread_id);
+				snprintf(thread_name, sizeof(thread_name), "%16X", static_cast<unsigned>(thread_id));
 			}
 		#else // LOGURU_PTHREADS
 			const char* thread_name = "";
@@ -1412,16 +1678,16 @@ namespace loguru
 
 		char level_buff[6];
 		if (verbosity <= Verbosity_FATAL) {
-			strcpy(level_buff, "FATL");
+			snprintf(level_buff, sizeof(level_buff) - 1, "FATL");
 		} else if (verbosity == Verbosity_ERROR) {
-			strcpy(level_buff, "ERR");
+			snprintf(level_buff, sizeof(level_buff) - 1, "ERR");
 		} else if (verbosity == Verbosity_WARNING) {
-			strcpy(level_buff, "WARN");
+			snprintf(level_buff, sizeof(level_buff) - 1, "WARN");
 		} else {
 			snprintf(level_buff, sizeof(level_buff) - 1, "% 4d", verbosity);
 		}
 
-		snprintf(out_buff, out_buff_size, "%04d-%02d-%02d %02d:%02d:%02d.%03ld (%8.3fs) [%-*s]%23s:%-5u %4s| ",
+		snprintf(out_buff, out_buff_size, "%04d-%02d-%02d %02d:%02d:%02d.%03lld (%8.3fs) [%-*s]%23s:%-5u %4s| ",
 			1900 + time_info.tm_year, 1 + time_info.tm_mon, time_info.tm_mday,
 			time_info.tm_hour, time_info.tm_min, time_info.tm_sec, ms_since_epoch % 1000,
 			uptime_sec,
@@ -1430,15 +1696,20 @@ namespace loguru
 	}
 
 	// stack_trace_skip is just if verbosity == FATAL.
-	static void log_message(int stack_trace_skip, Message& message, bool with_indentation)
+	static void log_message(int stack_trace_skip, Message& message, bool with_indentation, bool abort_if_fatal)
 	{
 		const auto verbosity = message.verbosity;
 		std::lock_guard<std::recursive_mutex> lock(s_mutex);
 
 		if (message.verbosity == Verbosity_FATAL) {
 			auto st = loguru::stacktrace(stack_trace_skip + 2);
-			if (st.c_str() && st.c_str()[0]) {
+			if (!st.empty()) {
 				RAW_LOG_F(ERROR, "Stack trace:\n%s", st.c_str());
+			}
+
+			auto ec = loguru::get_error_context();
+			if (!ec.empty()) {
+				RAW_LOG_F(ERROR, "%s", ec.c_str());
 			}
 		}
 
@@ -1474,7 +1745,12 @@ namespace loguru
 				fprintf(stderr, "%s%s%s%s\n",
 					message.preamble, message.indentation, message.prefix, message.message);
 			}
-			fflush(stderr);
+
+			#ifdef LOGURU_FLUSH_INTERVAL_MS
+				s_needs_flushing = true;
+			#else
+				fflush(stderr);
+			#endif
 		}
 
 		for (auto& p : s_callbacks) {
@@ -1483,15 +1759,40 @@ namespace loguru
 					message.indentation = indentation(p.indentation);
 				}
 				p.callback(p.user_data, message);
+				#ifdef LOGURU_FLUSH_INTERVAL_MS
+					s_needs_flushing = true;
+				#endif
 			}
 		}
 
+		#ifdef LOGURU_FLUSH_INTERVAL_MS
+			if (!s_flush_thread) {
+				s_flush_thread = new std::thread([](){
+					for (;;) {
+						if (s_needs_flushing) {
+							flush();
+						}
+						std::this_thread::sleep_for(std::chrono::milliseconds(LOGURU_FLUSH_INTERVAL_MS));
+					}
+				});
+			}
+		#endif
+
 		if (message.verbosity == Verbosity_FATAL) {
+			flush();
+
 			if (s_fatal_handler) {
 				s_fatal_handler(message);
+				flush();
 			}
 
-			abort();
+			if (abort_if_fatal) {
+#if LOGURU_CATCH_SIGABRT && !defined(_WIN32)
+				// Make sure we don't catch our own abort:
+				signal(SIGABRT, SIG_DFL);
+#endif
+				abort();
+			}
 		}
 	}
 
@@ -1503,7 +1804,7 @@ namespace loguru
 		char preamble_buff[128];
 		print_preamble(preamble_buff, sizeof(preamble_buff), verbosity, file, line);
 		auto message = Message{verbosity, file, line, preamble_buff, "", prefix, buff};
-		log_message(stack_trace_skip + 1, message, true);
+		log_message(stack_trace_skip + 1, message, true, true);
 	}
 
 	void log(Verbosity verbosity, const char* file, unsigned line, const char* format, ...)
@@ -1521,8 +1822,21 @@ namespace loguru
 		va_start(vlist, format);
 		auto buff = strprintfv(format, vlist);
 		auto message = Message{verbosity, file, line, "", "", "", buff.c_str()};
-		log_message(1, message, false);
+		log_message(1, message, false, true);
 		va_end(vlist);
+	}
+
+	void flush()
+	{
+		std::lock_guard<std::recursive_mutex> lock(s_mutex);
+		fflush(stderr);
+		for (const auto& callback : s_callbacks)
+		{
+			callback.flush(callback.user_data);
+		}
+		#ifdef LOGURU_FLUSH_INTERVAL_MS
+			s_needs_flushing = false;
+		#endif
 	}
 
 	LogScopeRAII::LogScopeRAII(Verbosity verbosity, const char* file, unsigned line, const char* format, ...)
@@ -1556,14 +1870,16 @@ namespace loguru
 	{
 		if (_file) {
 			std::lock_guard<std::recursive_mutex> lock(s_mutex);
-			if (_indent_stderr) {
+			if (_indent_stderr && s_stderr_indentation > 0) {
 				--s_stderr_indentation;
 			}
 			for (auto& p : s_callbacks) {
 				// Note: Callback indentation cannot change!
 				if (_verbosity <= p.verbosity) {
-					// std::max, in unlikely case this callback is new!
-					p.indentation = std::max(0, p.indentation - 1);
+					// in unlikely case this callback is new
+					if (p.indentation > 0) {
+						--p.indentation;
+					}
 				}
 			}
 			auto duration_sec = (now_ns() - _start_time_ns) / 1e9;
@@ -1585,6 +1901,201 @@ namespace loguru
 	{
 		log_and_abort(stack_trace_skip + 1, expr, file, line, " ");
 	}
+
+	// ----------------------------------------------------------------------------
+	// Streams:
+
+	#if LOGURU_WITH_STREAMS || LOGURU_REPLACE_GLOG
+
+	StreamLogger::~StreamLogger()
+	{
+		auto message = this->str();
+		log(_verbosity, _file, _line, "%s", message.c_str());
+	}
+
+	AbortLogger::~AbortLogger()
+	{
+		auto message = this->str();
+		loguru::log_and_abort(1, _expr, _file, _line, "%s", message.c_str());
+	}
+
+	#endif // LOGURU_WITH_STREAMS || LOGURU_REPLACE_GLOG
+
+	// ----------------------------------------------------------------------------
+	// 888888 88""Yb 88""Yb  dP"Yb  88""Yb      dP""b8  dP"Yb  88b 88 888888 888888 Yb  dP 888888
+	// 88__   88__dP 88__dP dP   Yb 88__dP     dP   `" dP   Yb 88Yb88   88   88__    YbdP    88
+	// 88""   88"Yb  88"Yb  Yb   dP 88"Yb      Yb      Yb   dP 88 Y88   88   88""    dPYb    88
+	// 888888 88  Yb 88  Yb  YbodP  88  Yb      YboodP  YbodP  88  Y8   88   888888 dP  Yb   88
+	// ----------------------------------------------------------------------------
+
+	struct StringStream
+	{
+		std::string str;
+	};
+
+	// Use this in your EcPrinter implementations.
+	void stream_print(StringStream* string_stream, const char* text)
+	{
+		string_stream->str += text;
+	}
+
+	// ----------------------------------------------------------------------------
+
+	struct EcEntry
+	{
+		const char* _file;
+		unsigned    _line;
+		const char* _descr;
+		EcPayload   _payload;
+	};
+
+	using EcStack = std::vector<EcEntry>;
+
+	// ----------------------------------------------------------------------------
+
+#ifdef _WIN32
+	Text as_string()
+	{
+		return Text(strdup(""));
+	}
+
+	ErrorContextScope::ErrorContextScope(const char*, unsigned, const char*, EcPayload&&)
+	{
+	}
+
+	ErrorContextScope::~ErrorContextScope()
+	{
+	}
+
+#else // !_WIN32
+	static pthread_once_t s_ec_pthread_once = PTHREAD_ONCE_INIT;
+	static pthread_key_t  s_ec_pthread_key;
+
+	void free_error_context(void* io_error_context)
+	{
+		delete reinterpret_cast<EcStack*>(io_error_context);
+	}
+
+	void ec_make_pthread_key()
+	{
+		(void)pthread_key_create(&s_ec_pthread_key, free_error_context);
+	}
+
+	EcStack& get_thread_error_context_stack()
+	{
+		(void)pthread_once(&s_ec_pthread_once, ec_make_pthread_key);
+		auto ec = reinterpret_cast<EcStack*>(pthread_getspecific(s_ec_pthread_key));
+		if (ec == nullptr) {
+			ec = new EcStack();
+			(void)pthread_setspecific(s_ec_pthread_key, ec);
+		}
+		return *ec;
+	}
+
+	// ----------------------------------------------------------------------------
+
+	Text get_error_context()
+	{
+		const auto& stack = get_thread_error_context_stack();
+		StringStream result;
+		if (!stack.empty()) {
+			result.str += "------------------------------------------------\n";
+			for (const auto& entry : stack) {
+				const auto description = std::string(entry._descr) + ":";
+				auto prefix = strprintf("[ErrorContext] %23s:%-5u %-20s ",
+					filename(entry._file), entry._line, description.c_str());
+				result.str += prefix.c_str();
+				entry._payload._printer(&result, entry._payload._ec_data);
+				result.str += "\n";
+			}
+			result.str += "------------------------------------------------";
+		}
+		return Text(strdup(result.str.c_str()));
+	}
+
+	ErrorContextScope::ErrorContextScope(const char* file, unsigned line, const char* desc, EcPayload&& se)
+	{
+		get_thread_error_context_stack().emplace_back(EcEntry{file, line, desc, se});
+	}
+
+	ErrorContextScope::~ErrorContextScope()
+	{
+		auto& stack = get_thread_error_context_stack();
+		CHECK_F(!stack.empty());
+		stack.pop_back();
+	}
+#endif // !_WIN32
+
+	// ------------------------------------------------------------------------
+
+	template<>
+	void ec_printer_impl(StringStream* string_stream, const char* value)
+	{
+		// Add quotes around the string to make it obvious where it begin and ends.
+		// This is great for detecting erroneous leading or trailing spaces in e.g. an identifier.
+		auto str = "\"" + std::string(value) + "\"";
+		stream_print(string_stream, str.c_str());
+	}
+
+	template<>
+	void ec_printer_impl(StringStream* string_stream, char c)
+	{
+		// Add quotes around the character to make it obvious where it begin and ends.
+		std::string str = "'";
+
+		auto write_hex_digit = [&](unsigned num)
+		{
+			if (num < 10u) { str += char('0' + num); }
+			else           { str += char('a' + num - 10); }
+		};
+
+		auto write_hex_16 = [&](uint16_t n)
+		{
+			write_hex_digit((n >> 12) & 0x0f);
+			write_hex_digit((n >>  8) & 0x0f);
+			write_hex_digit((n >>  4) & 0x0f);
+			write_hex_digit((n >>  0) & 0x0f);
+		};
+
+		if      (c == '\\') { str += "\\\\"; }
+		else if (c == '\"') { str += "\\\""; }
+		else if (c == '\'') { str += "\\\'"; }
+		else if (c == '\0') { str += "\\0";  }
+		else if (c == '\b') { str += "\\b";  }
+		else if (c == '\f') { str += "\\f";  }
+		else if (c == '\n') { str += "\\n";  }
+		else if (c == '\r') { str += "\\r";  }
+		else if (c == '\t') { str += "\\t";  }
+		else if (0 <= c && c < 0x20) {
+			str += "\\u";
+			write_hex_16(static_cast<uint16_t>(c));
+		} else { str += c; }
+
+		str += "'";
+
+		stream_print(string_stream, str.c_str());
+	}
+
+	#define DEFINE_EC(Type) \
+		template<>                                                          \
+		void ec_printer_impl(StringStream* string_stream, Type value)       \
+		{                                                                   \
+			auto str = std::to_string(value);                               \
+			stream_print(string_stream, str.c_str());                       \
+		}
+
+	DEFINE_EC(int);
+	DEFINE_EC(unsigned int);
+	DEFINE_EC(long);
+	DEFINE_EC(unsigned long);
+	DEFINE_EC(long long);
+	DEFINE_EC(unsigned long long);
+	DEFINE_EC(float);
+	DEFINE_EC(double);
+	DEFINE_EC(long double);
+
+	// ----------------------------------------------------------------------------
+
 } // namespace loguru
 
 // ----------------------------------------------------------------------------
@@ -1604,17 +2115,17 @@ namespace loguru {
 
 #else // _WIN32
 
-#include <signal.h>
-#include <unistd.h> // STDERR_FILENO
-
 namespace loguru
 {
-	struct Signal {
+	struct Signal
+	{
 		int         number;
 		const char* name;
 	};
 	const Signal ALL_SIGNALS[] = {
-		// { SIGABRT, "SIGABRT" },
+#if LOGURU_CATCH_SIGABRT
+		{ SIGABRT, "SIGABRT" },
+#endif
 		{ SIGBUS,  "SIGBUS"  },
 		{ SIGFPE,  "SIGFPE"  },
 		{ SIGILL,  "SIGILL"  },
@@ -1646,29 +2157,44 @@ namespace loguru
 
 	void signal_handler(int signal_number, siginfo_t*, void*)
 	{
+		const char* signal_name = "UNKNOWN SIGNAL";
+
+		for (const auto& s : ALL_SIGNALS) {
+			if (s.number == signal_number) {
+				signal_name = s.name;
+				break;
+			}
+		}
+
+		// --------------------------------------------------------------------
+		/* There are few things that are safe to do in a signal handler,
+		   but writing to stderr is one of them.
+		   So we first print out what happened to stderr so we're sure that gets out,
+		   then we do the unsafe things, like logging the stack trace.
+		   In practice, I've never seen any problems with doing these unsafe things in the signal handler.
+		*/
+
 		if (g_colorlogtostderr && s_terminal_has_color) {
 			write_to_stderr(terminal_reset());
 			write_to_stderr(terminal_bold());
 			write_to_stderr(terminal_light_red());
 		}
-
-		for (const auto& s : ALL_SIGNALS) {
-			if (s.number == signal_number) {
-				write_to_stderr("\n");
-				write_to_stderr(s.name);
-				write_to_stderr("\n");
-			}
-		}
-
-		/* This is theoretically unsafe to call from a signal handler,
-		   but in practice it seems like no problem on my Mac. */
-		auto st = stacktrace(2);
-		write_to_stderr(st.c_str());
 		write_to_stderr("\n");
-
+		write_to_stderr("Loguru caught a signal: ");
+		write_to_stderr(signal_name);
+		write_to_stderr("\n");
 		if (g_colorlogtostderr && s_terminal_has_color) {
 			write_to_stderr(terminal_reset());
 		}
+
+		// --------------------------------------------------------------------
+
+		flush();
+		char preamble_buff[128];
+		print_preamble(preamble_buff, sizeof(preamble_buff), Verbosity_FATAL, "", 0);
+		auto message = Message{Verbosity_FATAL, "", 0, preamble_buff, "", "Signal: ", signal_name};
+		log_message(1, message, false, false);
+		flush();
 
 		call_default_signal_handler(signal_number);
 	}

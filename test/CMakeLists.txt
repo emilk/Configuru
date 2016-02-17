@@ -15,6 +15,26 @@ MESSAGE(STATUS "CMAKE_BUILD_TYPE: ${CMAKE_BUILD_TYPE}")
 
 add_compile_options(-std=c++11 -Werror -Wall -Wextra)
 
+add_compile_options(
+    -Weverything
+    -Wno-c++98-compat
+    -Wno-c++98-compat-pedantic
+    -Wno-deprecated                    # boost
+    -Wno-documentation                 # nlohmann
+    -Wno-documentation-unknown-command # nlohmann
+    -Wno-exit-time-destructors
+    -Wno-float-equal
+    -Wno-global-constructors
+    -Wno-missing-noreturn
+    -Wno-missing-prototypes
+    -Wno-old-style-cast                # boost
+    -Wno-padded
+    -Wno-pedantic
+    -Wno-reserved-id-macro             # boost
+    -Wno-switch-enum
+    -Wno-weak-vtables                  # boost
+)
+
 file(GLOB source
     "${CMAKE_CURRENT_SOURCE_DIR}/*.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/../*.cpp"

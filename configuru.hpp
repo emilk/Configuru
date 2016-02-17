@@ -87,15 +87,20 @@ namespace configuru
 	struct DocInfo;
 	using DocInfo_SP = std::shared_ptr<DocInfo>;
 
-	struct Include {
+	using Index = unsigned;
+	const Index BAD_INDEX = static_cast<Index>(-1);
+
+	struct Include
+	{
 		DocInfo_SP doc;
-		unsigned line = (unsigned)-1;
+		unsigned line = BAD_INDEX;
 
 		Include() {}
 		Include(DocInfo_SP d, unsigned l) : doc(d), line(l) {}
 	};
 
-	struct DocInfo {
+	struct DocInfo
+	{
 		std::vector<Include> includers;
 
 		std::string filename;
@@ -106,14 +111,11 @@ namespace configuru
 	};
 
 	struct BadLookupInfo;
-
-	const unsigned BAD_ENTRY = -1;
-
 	template<typename Config_T>
 	struct Config_Entry
 	{
 		Config_T     _value;
-		unsigned     _nr       = BAD_ENTRY; // Size of the object prior to adding this entry
+		unsigned     _nr       = BAD_INDEX; // Size of the object prior to adding this entry
 		mutable bool _accessed = false;     // Set to true if accessed.
 	};
 
@@ -160,7 +162,8 @@ namespace configuru
 	class Config
 	{
 	public:
-		enum Type {
+		enum Type
+		{
 			Uninitialized, // Accessing a Config of this type is always an error.
 			BadLookupType, // We are the result of a key-lookup in a Object with no hit. We are in effect write-only.
 			Null, Bool, Int, Float, String, Array, Object
@@ -189,7 +192,7 @@ namespace configuru
 		Config(int i)                : _type(Int)     { _u.i = i; }
 		Config(unsigned int i)       : _type(Int)     { _u.i = i; }
 		Config(long i)               : _type(Int)     { _u.i = i; }
-		Config(unsigned long i)      : _type(Int)     { _u.i = i; }
+		Config(unsigned long i)      : Config(static_cast<unsigned long long>(i)) {}
 		Config(long long i)          : _type(Int)     { _u.i = i; }
 		Config(unsigned long long i) : _type(Int)
 		{
@@ -362,7 +365,7 @@ namespace configuru
 			std::vector<T> ret;
 			ret.reserve(array.size());
 			for (auto&& config : array) {
-				ret.push_back((T)config);
+				ret.push_back(static_cast<T>(config));
 			}
 			return ret;
 		}
@@ -373,7 +376,7 @@ namespace configuru
 		{
 			const auto& array = as_array();
 			check(array.size() == 2u, "Mismatched array length.");
-			return {(Left)array[0], (Right)array[1]};
+			return {static_cast<Left>(array[0]), static_cast<Right>(array[1])};
 		}
 #endif
 
@@ -391,7 +394,7 @@ namespace configuru
 		{
 			static_assert(std::is_integral<IntT>::value, "Not an integer.");
 			assert_type(Int);
-			check((int64_t)(IntT)_u.i == _u.i, "Integer out of range");
+			check(static_cast<int64_t>(static_cast<IntT>(_u.i)) == _u.i, "Integer out of range");
 			return static_cast<IntT>(_u.i);
 		}
 
@@ -401,7 +404,7 @@ namespace configuru
 				return _u.i;
 			} else {
 				assert_type(Float);
-				return (float)_u.f;
+				return static_cast<float>(_u.f);
 			}
 		}
 
@@ -425,7 +428,7 @@ namespace configuru
 			if (_type == BadLookupType) {
 				return default_value;
 			} else {
-				return (T)*this;
+				return static_cast<T>(*this);
 			}
 		}
 
@@ -604,7 +607,7 @@ namespace configuru
 		} _u;
 
 		DocInfo_SP        _doc; // So we can name the file
-		unsigned          _line = (unsigned)-1; // Where in the source, or -1. Lines are 1-indexed.
+		unsigned          _line = BAD_INDEX; // Where in the source, or -1. Lines are 1-indexed.
 		ConfigComments_UP _comments;
 	};
 
@@ -1071,7 +1074,7 @@ namespace configuru
 	{
 		make_object();
 		for (auto&& v : values) {
-			(*this)[(std::string)v.first] = std::move(v.second);
+			(*this)[v.first] = std::move(v.second);
 		}
 	}
 
@@ -1101,7 +1104,7 @@ namespace configuru
 		Config ret;
 		ret.make_object();
 		for (auto&& p : values) {
-			ret[(std::string)p.first] = std::move(p.second);
+			ret[static_cast<std::string>(p.first)] = std::move(p.second);
 		}
 		return ret;
 	}
@@ -1161,7 +1164,7 @@ namespace configuru
 		std::swap(_u,    o._u);
 
 		// Remember where we come from even when assigned a new value:
-		if (o._doc || o._line != (unsigned)-1) {
+		if (o._doc || o._line != BAD_INDEX) {
 			std::swap(_doc,  o._doc);
 			std::swap(_line, o._line);
 		}
@@ -1205,7 +1208,7 @@ namespace configuru
 		#endif // !CONFIGURU_VALUE_SEMANTICS
 
 		// Remember where we come from even when assigned a new value:
-		if (o._doc || o._line != (unsigned)-1) {
+		if (o._doc || o._line != BAD_INDEX) {
 			_doc  = o._doc;
 			_line = o._line;
 		}
@@ -1281,9 +1284,9 @@ namespace configuru
 	{
 		auto&& object = as_object()._impl;
 		auto&& entry = object[key];
-		if (entry._nr == BAD_ENTRY) {
+		if (entry._nr == BAD_INDEX) {
 			// New entry
-			entry._nr = (unsigned)object.size() - 1;
+			entry._nr = static_cast<Index>(object.size()) - 1;
 			entry._value._type = BadLookupType;
 			entry._value._u.bad_lookup = new BadLookupInfo{_doc, _line, key};
 		} else {
@@ -1301,9 +1304,9 @@ namespace configuru
 	{
 		auto&& object = as_object()._impl;
 		auto&& entry = object[key];
-		if (entry._nr == BAD_ENTRY) {
+		if (entry._nr == BAD_INDEX) {
 			// New entry
-			entry._nr = (unsigned)object.size() - 1;
+			entry._nr = static_cast<Index>(object.size()) - 1;
 		} else {
 			entry._accessed = true;
 		}
@@ -1436,21 +1439,21 @@ namespace configuru
 			case String:        return "string";
 			case Array:         return "array";
 			case Object:        return "object";
-			default:            return "BROKEN Config";
 		}
+		return "BROKEN Config";
 	}
 
 	std::string where_is(const DocInfo_SP& doc, unsigned line)
 	{
 		if (doc) {
 			std::string ret = doc->filename;
-			if (line != BAD_ENTRY) {
+			if (line != BAD_INDEX) {
 				ret += ":" + std::to_string(line);
 			}
 			doc->append_include_info(ret);
 			ret += ": ";
 			return ret;
-		} else if (line != BAD_ENTRY) {
+		} else if (line != BAD_INDEX) {
 			return "line " + std::to_string(line) + ": ";
 		} else {
 			return "";
@@ -1505,8 +1508,6 @@ namespace configuru
 #include <cerrno>
 #include <cstdlib>
 
-using namespace configuru;
-
 namespace configuru
 {
 	void append(Comments& a, Comments&& b)
@@ -1535,47 +1536,47 @@ namespace configuru
 	{
 		if (c <= 0x7F)  // 0XXX XXXX - one byte
 		{
-			dst += (char) c;
+			dst += static_cast<char>(c);
 			return 1;
 		}
 		else if (c <= 0x7FF)  // 110X XXXX - two bytes
 		{
-			dst += (char) ( 0xC0 | (c >> 6) );
-			dst += (char) ( 0x80 | (c & 0x3F) );
+			dst += static_cast<char>( 0xC0 | (c >> 6) );
+			dst += static_cast<char>( 0x80 | (c & 0x3F) );
 			return 2;
 		}
 		else if (c <= 0xFFFF)  // 1110 XXXX - three bytes
 		{
-			dst += (char) (0xE0 | (c >> 12));
-			dst += (char) (0x80 | ((c >> 6) & 0x3F));
-			dst += (char) (0x80 | (c & 0x3F));
+			dst += static_cast<char>(0xE0 | (c >> 12));
+			dst += static_cast<char>(0x80 | ((c >> 6) & 0x3F));
+			dst += static_cast<char>(0x80 | (c & 0x3F));
 			return 3;
 		}
 		else if (c <= 0x1FFFFF)  // 1111 0XXX - four bytes
 		{
-			dst += (char) (0xF0 | (c >> 18));
-			dst += (char) (0x80 | ((c >> 12) & 0x3F));
-			dst += (char) (0x80 | ((c >> 6) & 0x3F));
-			dst += (char) (0x80 | (c & 0x3F));
+			dst += static_cast<char>(0xF0 | (c >> 18));
+			dst += static_cast<char>(0x80 | ((c >> 12) & 0x3F));
+			dst += static_cast<char>(0x80 | ((c >> 6) & 0x3F));
+			dst += static_cast<char>(0x80 | (c & 0x3F));
 			return 4;
 		}
 		else if (c <= 0x3FFFFFF)  // 1111 10XX - five bytes
 		{
-			dst += (char) (0xF8 | (c >> 24));
-			dst += (char) (0x80 | (c >> 18));
-			dst += (char) (0x80 | ((c >> 12) & 0x3F));
-			dst += (char) (0x80 | ((c >> 6) & 0x3F));
-			dst += (char) (0x80 | (c & 0x3F));
+			dst += static_cast<char>(0xF8 | (c >> 24));
+			dst += static_cast<char>(0x80 | (c >> 18));
+			dst += static_cast<char>(0x80 | ((c >> 12) & 0x3F));
+			dst += static_cast<char>(0x80 | ((c >> 6) & 0x3F));
+			dst += static_cast<char>(0x80 | (c & 0x3F));
 			return 5;
 		}
 		else if (c <= 0x7FFFFFFF)  // 1111 110X - six bytes
 		{
-			dst += (char) (0xFC | (c >> 30));
-			dst += (char) (0x80 | ((c >> 24) & 0x3F));
-			dst += (char) (0x80 | ((c >> 18) & 0x3F));
-			dst += (char) (0x80 | ((c >> 12) & 0x3F));
-			dst += (char) (0x80 | ((c >> 6) & 0x3F));
-			dst += (char) (0x80 | (c & 0x3F));
+			dst += static_cast<char>(0xFC | (c >> 30));
+			dst += static_cast<char>(0x80 | ((c >> 24) & 0x3F));
+			dst += static_cast<char>(0x80 | ((c >> 18) & 0x3F));
+			dst += static_cast<char>(0x80 | ((c >> 12) & 0x3F));
+			dst += static_cast<char>(0x80 | ((c >> 6) & 0x3F));
+			dst += static_cast<char>(0x80 | (c & 0x3F));
 			return 6;
 		}
 		else {
@@ -1590,7 +1591,7 @@ namespace configuru
 		if (c == '\t') { return "'\\t'";   }
 		if (c == '\r') { return "'\\r'";   }
 		if (c == '\b') { return "'\\b'";   }
-		return (std::string)"'" + c + "'";
+		return std::string("'") + c + "'";
 	}
 
 	struct State
@@ -1659,7 +1660,7 @@ namespace configuru
 
 		unsigned column() const
 		{
-			return (unsigned)(_ptr - _line_start + 1);
+			return static_cast<unsigned>(_ptr - _line_start + 1);
 		}
 
 		const char* start_of_line() const
@@ -1747,9 +1748,9 @@ namespace configuru
 		bool is_reserved_identifier(const char* ptr)
 		{
 			if (strncmp(ptr, "true", 4)==0 || strncmp(ptr, "null", 4)==0) {
-				return !IDENT_CHARS[(uint8_t)ptr[4]];
+				return !IDENT_CHARS[static_cast<uint8_t>(ptr[4])];
 			} else if (strncmp(ptr, "false", 5)==0) {
-				return !IDENT_CHARS[(uint8_t)ptr[5]];
+				return !IDENT_CHARS[static_cast<uint8_t>(ptr[5])];
 			} else {
 				return false;
 			}
@@ -1776,7 +1777,7 @@ namespace configuru
 	void set_range(bool lookup[256], char a, char b)
 	{
 		for (char c=a; c<=b; ++c) {
-			lookup[(uint8_t)c] = true;
+			lookup[static_cast<uint8_t>(c)] = true;
 		}
 	}
 
@@ -1787,11 +1788,11 @@ namespace configuru
 		_ptr        = str;
 		_line_start = str;
 
-		IDENT_STARTERS[(uint8_t)'_'] = true;
+		IDENT_STARTERS[static_cast<uint8_t>('_')] = true;
 		set_range(IDENT_STARTERS, 'a', 'z');
 		set_range(IDENT_STARTERS, 'A', 'Z');
 
-		IDENT_CHARS[(uint8_t)'_'] = true;
+		IDENT_CHARS[static_cast<uint8_t>('_')] = true;
 		set_range(IDENT_CHARS, 'a', 'z');
 		set_range(IDENT_CHARS, 'A', 'Z');
 		set_range(IDENT_CHARS, '0', '9');
@@ -1929,7 +1930,7 @@ namespace configuru
 			auto state = get_state();
 			skip_white_ignore_comments();
 
-			if (IDENT_STARTERS[(uint8_t)_ptr[0]] && !is_reserved_identifier(_ptr)) {
+			if (IDENT_STARTERS[static_cast<uint8_t>(_ptr[0])] && !is_reserved_identifier(_ptr)) {
 				is_object = true;
 			} else if (_ptr[0] == '"' || _ptr[0] == '@') {
 				parse_string();
@@ -1993,19 +1994,19 @@ namespace configuru
 		}
 		else if (_ptr[0] == 'n') {
 			parse_assert(_ptr[1]=='u' && _ptr[2]=='l' && _ptr[3]=='l', "Expected 'null'");
-			parse_assert(!IDENT_CHARS[(uint8_t)_ptr[4]], "Expected 'null'");
+			parse_assert(!IDENT_CHARS[static_cast<uint8_t>(_ptr[4])], "Expected 'null'");
 			_ptr += 4;
 			dst = nullptr;
 		}
 		else if (_ptr[0] == 't') {
 			parse_assert(_ptr[1]=='r' && _ptr[2]=='u' && _ptr[3]=='e', "Expected 'true'");
-			parse_assert(!IDENT_CHARS[(uint8_t)_ptr[4]], "Expected 'true'");
+			parse_assert(!IDENT_CHARS[static_cast<uint8_t>(_ptr[4])], "Expected 'true'");
 			_ptr += 4;
 			dst = true;
 		}
 		else if (_ptr[0] == 'f') {
 			parse_assert(_ptr[1]=='a' && _ptr[2]=='l' && _ptr[3]=='s' && _ptr[4]=='e', "Expected 'false'");
-			parse_assert(!IDENT_CHARS[(uint8_t)_ptr[5]], "Expected 'false'");
+			parse_assert(!IDENT_CHARS[static_cast<uint8_t>(_ptr[5])], "Expected 'false'");
 			_ptr += 5;
 			dst = false;
 		}
@@ -2022,19 +2023,19 @@ namespace configuru
 			// Some kind of number:
 
 			if (_ptr[0] == '-' && _ptr[1] == 'i' && _ptr[2]=='n' && _ptr[3]=='f') {
-				parse_assert(!IDENT_CHARS[(uint8_t)_ptr[4]], "Expected -inf");
+				parse_assert(!IDENT_CHARS[static_cast<uint8_t>(_ptr[4])], "Expected -inf");
 				parse_assert(_options.inf, "infinity forbidden.");
 				_ptr += 4;
 				dst = -std::numeric_limits<double>::infinity();
 			}
 			else if (_ptr[0] == '+' && _ptr[1] == 'i' && _ptr[2]=='n' && _ptr[3]=='f') {
-				parse_assert(!IDENT_CHARS[(uint8_t)_ptr[4]], "Expected +inf");
+				parse_assert(!IDENT_CHARS[static_cast<uint8_t>(_ptr[4])], "Expected +inf");
 				parse_assert(_options.inf, "infinity forbidden.");
 				_ptr += 4;
 				dst = std::numeric_limits<double>::infinity();
 			}
 			else if (_ptr[0] == '+' && _ptr[1] == 'N' && _ptr[2]=='a' && _ptr[3]=='N') {
-				parse_assert(!IDENT_CHARS[(uint8_t)_ptr[4]], "Expected +NaN");
+				parse_assert(!IDENT_CHARS[static_cast<uint8_t>(_ptr[4])], "Expected +NaN");
 				parse_assert(_options.nan, "NaN (Not a Number) forbidden.");
 				_ptr += 4;
 				dst = std::numeric_limits<double>::quiet_NaN();
@@ -2102,7 +2103,7 @@ namespace configuru
 				throw_indentation_error(_indentation, line_indentation);
 			}
 
-			if (IDENT_STARTERS[(uint8_t)_ptr[0]] && !is_reserved_identifier(_ptr)) {
+			if (IDENT_STARTERS[static_cast<uint8_t>(_ptr[0])] && !is_reserved_identifier(_ptr)) {
 				throw_error("Found identifier; expected value. Did you mean to use a {object} rather than a [array]?");
 			}
 
@@ -2194,9 +2195,9 @@ namespace configuru
 			auto pre_key_state = get_state();
 			std::string key;
 
-			if (IDENT_STARTERS[(uint8_t)_ptr[0]] && !is_reserved_identifier(_ptr)) {
+			if (IDENT_STARTERS[static_cast<uint8_t>(_ptr[0])] && !is_reserved_identifier(_ptr)) {
 				parse_assert(_options.identifiers_keys, "You need to surround keys with quotes");
-				while (IDENT_CHARS[(uint8_t)_ptr[0]]) {
+				while (IDENT_CHARS[static_cast<uint8_t>(_ptr[0])]) {
 					key += _ptr[0];
 					_ptr += 1;
 				}
@@ -2262,7 +2263,7 @@ namespace configuru
 	void Parser::parse_int(Config& out)
 	{
 		const auto start = _ptr;
-		const auto result = strtoll(start, (char**)&_ptr, 10);
+		const auto result = strtoll(start, const_cast<char**>(&_ptr), 10);
 		parse_assert(start < _ptr, "Invalid integer");
 		parse_assert(start[0] != '0' || result == 0, "Integer may not start with a zero");
 		out = result;
@@ -2271,7 +2272,7 @@ namespace configuru
 	void Parser::parse_float(Config& out)
 	{
 		const auto start = _ptr;
-		const double result = strtod(start, (char**)&_ptr);
+		const double result = strtod(start, const_cast<char**>(&_ptr));
 		parse_assert(start < _ptr, "Invalid number");
 		out = result;
 	}
@@ -2299,7 +2300,7 @@ namespace configuru
 			parse_assert(_options.hexadecimal_integers, "Hexadecimal numbers forbidden.");
 			_ptr += 2;
 			auto start = _ptr;
-			out = sign * (int64_t)strtoull(start, (char**)&_ptr, 16);
+			out = sign * static_cast<int64_t>(strtoull(start, const_cast<char**>(&_ptr), 16));
 			parse_assert(start < _ptr, "Missing hexaxdecimal digits after 0x");
 			return;
 		}
@@ -2308,7 +2309,7 @@ namespace configuru
 			parse_assert(_options.binary_integers, "Binary numbers forbidden.");
 			_ptr += 2;
 			auto start = _ptr;
-			out = sign * (int64_t)strtoull(start, (char**)&_ptr, 2);
+			out = sign * static_cast<int64_t>(strtoull(start, const_cast<char**>(&_ptr), 2));
 			parse_assert(start < _ptr, "Missing binary digits after 0b");
 			return;
 		}
@@ -2327,7 +2328,7 @@ namespace configuru
 		// It looks like an integer - but it may be too long to represent as one!
 		const auto MAX_INT_STR = (sign == +1 ? "9223372036854775807" : "9223372036854775808");
 
-		const size_t length = p - _ptr;
+		const auto length = p - _ptr;
 
 		if (length < 19) {
 			_ptr = pre_sign;
@@ -2510,11 +2511,11 @@ namespace configuru
 			ret *= 16;
 			char c = _ptr[i];
 			if ('0' <= c && c <= '9') {
-				ret += c - '0';
+				ret += static_cast<uint64_t>(c - '0');
 			} else if ('a' <= c && c <= 'f') {
-				ret += 10 + c - 'a';
+				ret += static_cast<uint64_t>(10 + c - 'a');
 			} else if ('A' <= c && c <= 'F') {
-				ret += 10 + c - 'A';
+				ret += static_cast<uint64_t>(10 + c - 'A');
 			} else {
 				throw_error("Expected hexadecimal digit, got " + quote(_ptr[0]));
 			}
@@ -2552,7 +2553,7 @@ namespace configuru
 				set_state(state);
 				throw_error("Unterminated include path");
 			} else if (_ptr[0] == terminator) {
-				path = std::string(start, _ptr-start);
+				path = std::string(start, static_cast<size_t>(_ptr - start));
 				_ptr += 1;
 				break;
 			} else if (_ptr[0] == '\n') {
@@ -2602,16 +2603,20 @@ namespace configuru
 	{
 		FILE* fp = fopen(path, "rb");
 		if (fp == nullptr) {
-			CONFIGURU_ONERROR((std::string)"Failed to open '" + path + "' for reading: " + strerror(errno));
+			CONFIGURU_ONERROR(std::string("Failed to open '") + path + "' for reading: " + strerror(errno));
 		}
 		std::string contents;
 		fseek(fp, 0, SEEK_END);
-		contents.resize(ftell(fp));
+		auto size = ftell(fp);
+		if (size < 0) {
+			CONFIGURU_ONERROR(std::string("Failed to find out size of '") + path + "': " + strerror(errno));
+		}
+		contents.resize(static_cast<size_t>(size));
 		rewind(fp);
 		auto num_read = fread(&contents[0], 1, contents.size(), fp);
 		fclose(fp);
 		if (num_read != contents.size()) {
-			CONFIGURU_ONERROR((std::string)"Failed to read from '" + path + "': " + strerror(errno));
+			CONFIGURU_ONERROR(std::string("Failed to read from '") + path + "': " + strerror(errno));
 		}
 		return contents;
 	}
@@ -2737,13 +2742,13 @@ namespace configuru
 			if (config.is_null()) {
 				_out += "null";
 			} else if (config.is_bool()) {
-				_out += ((bool)config ? "true" : "false");
+				_out += (config.as_bool() ? "true" : "false");
 			} else if (config.is_int()) {
 				char temp_buff[64];
-				snprintf(temp_buff, sizeof(temp_buff), "%lld", (long long)config);
+				snprintf(temp_buff, sizeof(temp_buff), "%lld", static_cast<long long>(config));
 				_out += temp_buff;
 			} else if (config.is_float()) {
-				write_number( (double)config );
+				write_number( config.as_double() );
 			} else if (config.is_string()) {
 				write_string(config.as_string());
 			} else if (config.is_array()) {
@@ -2892,8 +2897,8 @@ namespace configuru
 				return;
 			}
 
-			auto as_int = (long long)val;
-			if ((double)as_int == val) {
+			const auto as_int = static_cast<long long>(val);
+			if (static_cast<double>(as_int) == val) {
 				char temp_buff[64];
 				snprintf(temp_buff, sizeof(temp_buff), "%lld", as_int);
 				_out += temp_buff;
@@ -2906,8 +2911,8 @@ namespace configuru
 			if (std::isfinite(val)) {
 				char temp_buff[64];
 
-				auto as_float = (float)val;
-				if ((double)as_float == val) {
+				const auto as_float = static_cast<float>(val);
+				if (static_cast<double>(as_float) == val) {
 					// It's actually a float!
 					snprintf(temp_buff, sizeof(temp_buff), "%g", as_float);
 					if (std::strtof(temp_buff, nullptr) == as_float) {
@@ -3010,7 +3015,7 @@ namespace configuru
 				else if (c == '\n') { _out += "\\n";  }
 				else if (c == '\r') { _out += "\\r";  }
 				else if (c == '\t') { _out += "\\t";  }
-				else if (0 <= c && c < 0x20) { write_unicode_16(c); }
+				else if (0 <= c && c < 0x20) { write_unicode_16(static_cast<uint16_t>(c)); }
 				else { _out.push_back(c); } // TODO: add option to escape unicode
 			}
 			_out.push_back('"');
@@ -3088,12 +3093,12 @@ namespace configuru
 	{
 		auto fp = fopen(path, "wb");
 		if (fp == nullptr) {
-			CONFIGURU_ONERROR((std::string)"Failed to open '" + path + "' for writing: " + strerror(errno));
+			CONFIGURU_ONERROR(std::string("Failed to open '") + path + "' for writing: " + strerror(errno));
 		}
 		auto num_bytes_written = fwrite(data.data(), 1, data.size(), fp);
 		fclose(fp);
 		if (num_bytes_written != data.size()) {
-			CONFIGURU_ONERROR((std::string)"Failed to write to '" + path + "': " + strerror(errno));
+			CONFIGURU_ONERROR(std::string("Failed to write to '") + path + "': " + strerror(errno));
 		}
 	}
 
