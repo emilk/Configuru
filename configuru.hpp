@@ -237,7 +237,7 @@ namespace configuru
 		{
 			make_array();
 			_u.array->_impl.reserve(values.size());
-			for (const auto& v : values) {
+			for (const auto v : values) {
 				push_back(!!v);
 			}
 		}

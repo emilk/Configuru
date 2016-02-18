@@ -20,6 +20,7 @@ add_compile_options(
     -Wno-c++98-compat
     -Wno-c++98-compat-pedantic
     -Wno-deprecated                    # boost
+    -Wno-disabled-macro-expansion      # Loguru
     -Wno-documentation                 # nlohmann
     -Wno-documentation-unknown-command # nlohmann
     -Wno-exit-time-destructors
