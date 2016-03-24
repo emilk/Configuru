@@ -679,6 +679,25 @@ void test_swap()
     CHECK_F(b["salute"] == "goodbye");
 }
 
+void test_get_or()
+{
+    LOG_F(INFO, "test_get_or...");
+	const Config cfg = parse_string(R"({
+	"a": {
+		"b": {
+			"c": {
+				"key": 42
+			}
+		}
+	}
+})", JSON, "test_get_or");
+
+	CHECK_EQ_F(cfg.get_or({"a", "b", "c", "key"}, 0), 42);
+	// CHECK_EQ_F(cfg.get_or({"a", "x", "c", "key"}, 0), 42); // Should throw
+	CHECK_EQ_F(cfg.get_or({"a", "x", "c", "key"}, 3.14), 3.14);
+	CHECK_EQ_F(cfg.get_or({"a", "b", "c", "not_key"}, "hello"), "hello");
+}
+
 int main(int argc, char* argv[])
 {
 	loguru::init(argc, argv);
@@ -718,4 +737,5 @@ int main(int argc, char* argv[])
 	run_unit_tests();
     test_copy_semantics();
     test_swap();
+    test_get_or();
 }

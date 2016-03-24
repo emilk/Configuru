@@ -23,6 +23,7 @@ add_compile_options(
     -Wno-disabled-macro-expansion      # Loguru
     -Wno-documentation                 # nlohmann
     -Wno-documentation-unknown-command # nlohmann
+    -Wno-double-promotion
     -Wno-exit-time-destructors
     -Wno-float-equal
     -Wno-global-constructors
@@ -31,6 +32,7 @@ add_compile_options(
     -Wno-old-style-cast                # boost
     -Wno-padded
     -Wno-pedantic
+    -Wno-range-loop-analysis           # Configuru
     -Wno-reserved-id-macro             # boost
     -Wno-switch-enum
     -Wno-weak-vtables                  # boost

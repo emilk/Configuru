@@ -524,6 +524,15 @@ namespace configuru
 			return get_or<std::string>(key, default_value);
 		}
 
+		// obj.get_or({"a", "b". "c"}, 42) - like obj["a"]["b"]["c"], but returns 42 if any of the keys are *missing*.
+		template<typename T>
+		T get_or(std::initializer_list<std::string> keys, const T& default_value) const;
+
+		std::string get_or(std::initializer_list<std::string> keys, const char* default_value) const
+		{
+			return get_or<std::string>(keys, default_value);
+		}
+
 		// --------------------------------------------------------------------------------
 
 		// Compare Config values recursively.
@@ -731,6 +740,21 @@ namespace configuru
 			entry._accessed = true;
 			return as<T>(entry._value);
 		}
+	}
+
+	template<typename T>
+	T Config::get_or(std::initializer_list<std::string> keys, const T& default_value) const
+	{
+		const Config* obj = this;
+		for (const auto& key : keys)
+		{
+			if (obj->has_key(key)) {
+				obj = &(*obj)[key];
+			} else {
+				return default_value;
+			}
+		}
+		return as<T>(*obj);
 	}
 
 	// ------------------------------------------------------------------------
