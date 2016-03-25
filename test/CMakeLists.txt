@@ -9,7 +9,8 @@ endif(NOT CMAKE_BUILD_TYPE)
 
 find_package(Boost REQUIRED filesystem system)
 add_definitions(-DBOOST_FILESYSTEM_VERSION=3)
-include_directories(${Boost_INCLUDE_DIRS})
+include_directories(SYSTEM ${Boost_INCLUDE_DIRS})
+include_directories(SYSTEM .)
 
 MESSAGE(STATUS "CMAKE_BUILD_TYPE: ${CMAKE_BUILD_TYPE}")
 
@@ -19,23 +20,12 @@ add_compile_options(
     -Weverything
     -Wno-c++98-compat
     -Wno-c++98-compat-pedantic
-    -Wno-deprecated                    # boost
-    -Wno-disabled-macro-expansion      # Loguru
-    -Wno-documentation                 # nlohmann
-    -Wno-documentation-unknown-command # nlohmann
-    -Wno-double-promotion
-    -Wno-exit-time-destructors
-    -Wno-float-equal
-    -Wno-global-constructors
-    -Wno-missing-noreturn
-    -Wno-missing-prototypes
-    -Wno-old-style-cast                # boost
-    -Wno-padded
-    -Wno-pedantic
-    -Wno-range-loop-analysis           # Configuru
-    -Wno-reserved-id-macro             # boost
-    -Wno-switch-enum
-    -Wno-weak-vtables                  # boost
+    -Wno-exit-time-destructors             # configuru_test.cpp
+    -Wno-float-equal                       # configuru_test.cpp
+    -Wno-global-constructors               # configuru_test.cpp
+    -Wno-gnu-zero-variadic-macro-arguments # configuru_test.cpp vs Loguru
+    -Wno-missing-prototypes                # configuru_test.cpp
+    -Wno-old-style-cast                    # configuru_test.cpp
 )
 
 file(GLOB source

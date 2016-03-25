@@ -17,16 +17,22 @@ Website: www.ilikebigbits.com
 	and his wonderful stb libraries at https://github.com/nothings/stb.
 
 # Version history
-	* Version 0.1 - 2015-03-22 - Works great on Mac.
-	* Version 0.2 - 2015-09-17 - Removed the only dependency.
-	* Version 0.3 - 2015-10-02 - Drop-in replacement for most of GLOG
-	* Version 0.4 - 2015-10-07 - Single-file!
-	* Version 0.5 - 2015-10-17 - Improved file logging
-	* Version 0.6 - 2015-10-24 - Add stack traces
-	* Version 0.7 - 2015-10-27 - Signals
-	* Version 0.8 - 2015-10-30 - Color logging.
-	* Version 0.9 - 2015-11-26 - ABORT_S and proper handling of FATAL
-	* Verison 1.0 - 2015-02-14 - ERROR_CONTEXT
+	* Version 0.10 - 2015-03-22 - Works great on Mac.
+	* Version 0.20 - 2015-09-17 - Removed the only dependency.
+	* Version 0.30 - 2015-10-02 - Drop-in replacement for most of GLOG
+	* Version 0.40 - 2015-10-07 - Single-file!
+	* Version 0.50 - 2015-10-17 - Improved file logging
+	* Version 0.60 - 2015-10-24 - Add stack traces
+	* Version 0.70 - 2015-10-27 - Signals
+	* Version 0.80 - 2015-10-30 - Color logging.
+	* Version 0.90 - 2015-11-26 - ABORT_S and proper handling of FATAL
+	* Verison 1.00 - 2015-02-14 - ERROR_CONTEXT
+	* Verison 1.10 - 2015-02-19 - -v OFF, -v INFO etc
+	* Verison 1.11 - 2015-02-20 - textprintf vs strprintf
+	* Verison 1.12 - 2015-02-22 - Remove g_alsologtostderr
+	* Verison 1.13 - 2015-02-29 - ERROR_CONTEXT as linked list
+	* Verison 1.20 - 2015-03-19 - Add get_thread_name()
+	* Verison 1.21 - 2015-03-20 - Minor fixes
 
 # Compiling
 	Just include <loguru.hpp> where you want to use Loguru.
@@ -71,7 +77,7 @@ Website: www.ilikebigbits.com
 	DLOG_F("Only written in debug-builds");
 
 	// Turn off writing to stderr:
-	loguru::g_alsologtostderr = false;
+	loguru::g_stderr_verbosity = loguru::Verbosity_OFF;
 
 	// Turn off writing err/warn in red:
 	loguru::g_colorlogtostderr = false;
@@ -102,13 +108,14 @@ Website: www.ilikebigbits.com
 
 	LOGURU_REPLACE_GLOG:
 		Make Loguru mimic GLOG as close as possible,
-		including #defining LOG, CHECK, FLAGS_v etc.
+		including #defining LOG, CHECK, VLOG_IS_ON etc.
 		LOGURU_REPLACE_GLOG implies LOGURU_WITH_STREAMS.
 
 	You can also configure:
-	LOGURU_FLUSH_INTERVAL_MS:
-		If set, Loguru will flush outputs every LOGURU_FLUSH_INTERVAL_MS ms.
-		If not set, Loguru will flush on every line.
+	loguru::g_flush_interval_ms:
+		If set to zero Loguru will flush on every line (unbuffered mode).
+		Else Loguru will flush outputs every g_flush_interval_ms milliseconds (buffered mode).
+		The default is g_flush_interval_ms=0, i.e. unbuffered mode.
 
 # Notes:
 	* Any arguments to CHECK:s are only evaluated once.
@@ -116,8 +123,15 @@ Website: www.ilikebigbits.com
 	* Any arguments to LOG_IF functions are only evaluated if the test passes.
 */
 
-#ifndef LOGURU_HEADER_HPP
-#define LOGURU_HEADER_HPP
+// Disable all warnings from gcc/clang:
+#if defined(__clang__)
+	#pragma clang system_header
+#elif defined(__GNUC__)
+	#pragma GCC system_header
+#endif
+
+#ifndef LOGURU_HAS_DECLARED_FORMAT_HEADER
+#define LOGURU_HAS_DECLARED_FORMAT_HEADER
 
 // ----------------------------------------------------------------------------
 
@@ -132,12 +146,6 @@ Website: www.ilikebigbits.com
 	#define LOGURU_CATCH_SIGABRT 1
 #endif
 
-// The data of ERROR_CONTEXT must fit in LOGURU_EC_DATA_SIZE bytes.
-// If your data does not fit, maybe a pointer to it will?
-#ifndef LOGURU_EC_DATA_SIZE
-	#define LOGURU_EC_DATA_SIZE sizeof(long double)
-#endif
-
 #ifndef LOGURU_REDEFINE_ASSERT
 	#define LOGURU_REDEFINE_ASSERT 0
 #endif
@@ -148,6 +156,11 @@ Website: www.ilikebigbits.com
 
 #ifndef LOGURU_REPLACE_GLOG
 	#define LOGURU_REPLACE_GLOG 0
+#endif
+
+#if LOGURU_REPLACE_GLOG
+	#undef LOGURU_WITH_STREAMS
+	#define LOGURU_WITH_STREAMS 1
 #endif
 
 // --------------------------------------------------------------------
@@ -203,15 +216,22 @@ namespace loguru
 		const char* c_str() const { return _str; }
 		bool empty() const { return _str == nullptr || *_str == '\0'; }
 
+		char* release()
+		{
+			auto result = _str;
+			_str = nullptr;
+			return result;
+		}
+
 	private:
 		char* _str;
 	};
 
 	// Like printf, but returns the formated text.
-	Text strprintf(LOGURU_FORMAT_STRING_TYPE format, ...) LOGURU_PRINTF_LIKE(1, 2);
+	Text textprintf(LOGURU_FORMAT_STRING_TYPE format, ...) LOGURU_PRINTF_LIKE(1, 2);
 
 	// Overloaded for variadic template matching.
-	Text strprintf();
+	Text textprintf();
 
 	using Verbosity = int;
 
@@ -223,7 +243,8 @@ namespace loguru
 
 	enum NamedVerbosity : Verbosity
 	{
-		Verbosity_NOTHING = -9, // If set as output, nothing is written
+		// You may use Verbosity_OFF on g_stderr_verbosity, but for nothing else!
+		Verbosity_OFF     = -9, // Never do LOG_F(OFF)
 
 		// Prefer to use ABORT_F or ABORT_S over LOG_F(FATAL) or LOG_S(FATAL).
 		Verbosity_FATAL   = -3,
@@ -264,12 +285,14 @@ namespace loguru
 		const char* message;     // User message goes here.
 	};
 
-	// Control with -v argument.
-	extern Verbosity g_stderr_verbosity; // 0 by default (only log ERROR, WARNING and INFO)
-
-	// By default, Loguru writes everything above g_stderr_verbosity to stdout.
-	extern bool      g_alsologtostderr;  // True by default.
+	/* Everything with a verbosity equal or greater than g_stderr_verbosity will be
+	written to stderr. You can set this in code or via the -v argument.
+	Set to logurur::Verbosity_OFF to write nothing to stderr.
+	Default is 0, i.e. only log ERROR, WARNING and INFO are written to stderr.
+	*/
+	extern Verbosity g_stderr_verbosity;
 	extern bool      g_colorlogtostderr; // True by default.
+	extern unsigned  g_flush_interval_ms; // 0 (unbuffered) by default.
 
 	// May not throw!
 	typedef void (*log_handler_t)(void* user_data, const Message& message);
@@ -283,7 +306,18 @@ namespace loguru
 		You don't need to call this, but it's nice if you do.
 		This will look for arguments meant for loguru and remove them.
 		Arguments meant for loguru are:
-			-v n   Set verbosity level */
+			-v n   Set stderr verbosity level. Examples:
+					   -v 3        Show verbosity level 3 and lower.
+					   -v 0        Only show INFO, WARNING, ERROR, FATAL (default).
+					   -v INFO     Only show INFO, WARNING, ERROR, FATAL (default).
+					   -v WARNING  Only show WARNING, ERROR, FATAL.
+					   -v ERROR    Only show ERROR, FATAL.
+					   -v FATAL    Only show FATAL.
+					   -v OFF      Turn off logging to stderr.
+
+		Tip: You can set g_stderr_verbosity before calling loguru::init.
+		That way you can set the default but have the user override it with the -v flag.
+	*/
 	void init(int& argc, char* argv[]);
 
 	// What ~ will be replaced with, e.g. "/home/your_user_name/"
@@ -369,26 +403,37 @@ namespace loguru
 	LOGURU_NORETURN void log_and_abort(int stack_trace_skip, const char* expr, const char* file, unsigned line);
 
 	// Flush output to stderr and files.
-	// If LOGURU_FLUSH_INTERVAL_MS is set, this will be called automatically this often.
+	// If g_flush_interval_ms is set to non-zero, this will be called automatically this often.
 	// If not set, you do not need to call this at al.
 	void flush();
 
-	template<class T> inline Text format_value(const T&)                    { return strprintf("N/A");     }
-	template<>        inline Text format_value(const char& v)               { return strprintf("%c",   v); }
-	template<>        inline Text format_value(const int& v)                { return strprintf("%d",   v); }
-	template<>        inline Text format_value(const unsigned int& v)       { return strprintf("%u",   v); }
-	template<>        inline Text format_value(const long& v)               { return strprintf("%lu",  v); }
-	template<>        inline Text format_value(const unsigned long& v)      { return strprintf("%ld",  v); }
-	template<>        inline Text format_value(const long long& v)          { return strprintf("%llu", v); }
-	template<>        inline Text format_value(const unsigned long long& v) { return strprintf("%lld", v); }
-	template<>        inline Text format_value(const float& v)              { return strprintf("%f",   v); }
-	template<>        inline Text format_value(const double& v)             { return strprintf("%f",   v); }
+	template<class T> inline Text format_value(const T&)                    { return textprintf("N/A");     }
+	template<>        inline Text format_value(const char& v)               { return textprintf("%c",   v); }
+	template<>        inline Text format_value(const int& v)                { return textprintf("%d",   v); }
+	template<>        inline Text format_value(const unsigned int& v)       { return textprintf("%u",   v); }
+	template<>        inline Text format_value(const long& v)               { return textprintf("%lu",  v); }
+	template<>        inline Text format_value(const unsigned long& v)      { return textprintf("%ld",  v); }
+	template<>        inline Text format_value(const long long& v)          { return textprintf("%llu", v); }
+	template<>        inline Text format_value(const unsigned long long& v) { return textprintf("%lld", v); }
+	template<>        inline Text format_value(const float& v)              { return textprintf("%f",   v); }
+	template<>        inline Text format_value(const double& v)             { return textprintf("%f",   v); }
 
 	/* Thread names can be set for the benefit of readable logs.
 	   If you do not set the thread name, a hex id will be shown instead.
 	   These thread names may or may not be the same as the system thread names,
-	   depending on the system. */
+	   depending on the system.
+	   Try to limit the thread name to 15 characters or less. */
 	void set_thread_name(const char* name);
+
+	/* Returns the thread name for this thread.
+	   On OSX this will return the system thread name (setable from both within and without Loguru).
+	   On other systems it will return whatever you set in set_thread_name();
+	   If no thread name is set, this will return a hexadecimal thread id.
+	   length should be the number of bytes available in the buffer.
+	   17 is a good number for length.
+	   right_align_hext_id means any hexadecimal thread id will be written to the end of buffer.
+	*/
+	void get_thread_name(char* buffer, unsigned long long length, bool right_align_hext_id);
 
 	/* Generates a readable stacktrace as a string.
 	   'skip' specifies how many stack frames to skip.
@@ -459,139 +504,173 @@ namespace loguru
 	const char* terminal_reset();
 
 	// --------------------------------------------------------------------
-	// Error-context related:
-
-	struct EcData { char data[LOGURU_EC_DATA_SIZE]; };
+	// Error context related:
 
 	struct StringStream;
 
-	// Use this in your ec_printer_impl overload.
-	void stream_print(StringStream* string_stream, const char* text);
+	// Use this in your EcEntryBase::print_value overload.
+	void stream_print(StringStream& out_string_stream, const char* text);
 
-
-	template<typename T>
-	inline EcData as_ec_data(const T& value)
+	class EcEntryBase
 	{
-		static_assert(sizeof(T) <= sizeof(EcData),
-			"Data too large - consider using a pointer or increase LOGURU_EC_DATA_SIZE.");
-		return *reinterpret_cast<const EcData*>(&value);
-	}
+	public:
+		EcEntryBase(const char* file, unsigned line, const char* descr);
+		~EcEntryBase();
+		EcEntryBase(const EcEntryBase&) = delete;
+		EcEntryBase(EcEntryBase&&) = delete;
+		EcEntryBase& operator=(const EcEntryBase&) = delete;
+		EcEntryBase& operator=(EcEntryBase&&) = delete;
 
-	template<typename T>
-	inline T from_ec_data(const EcData& ec_data)
-	{
-		static_assert(sizeof(T) <= sizeof(EcData),
-			"Data too large - consider using a pointer or increase LOGURU_EC_DATA_SIZE.");
-		return *reinterpret_cast<const T*>(&ec_data);
-	}
+		virtual void print_value(StringStream& out_string_stream) const = 0;
 
-	using EcPrinter = void(*)(StringStream* string_stream, EcData ec_data);
+		EcEntryBase* previous() const { return _previous; }
 
-	struct EcPayload
-	{
-		EcData    _ec_data;
-		EcPrinter _printer;
+	// private:
+		const char*  _file;
+		unsigned     _line;
+		const char*  _descr;
+		EcEntryBase* _previous;
 	};
 
-	struct ErrorContextScope
+	template<typename T>
+	class EcEntryData : public EcEntryBase
 	{
-		ErrorContextScope(const char* file, unsigned line, const char* desc, EcPayload&& se);
-		~ErrorContextScope();
-		ErrorContextScope(ErrorContextScope&) = delete;
-		ErrorContextScope(ErrorContextScope&&) = delete;
-		ErrorContextScope& operator=(ErrorContextScope&) = delete;
-		ErrorContextScope& operator=(ErrorContextScope&&) = delete;
+	public:
+		using Printer = Text(*)(T data);
+
+		EcEntryData(const char* file, unsigned line, const char* descr, T data, Printer&& printer)
+			: EcEntryBase(file, line, descr), _data(data), _printer(printer) {}
+
+		virtual void print_value(StringStream& out_string_stream) const override
+		{
+			const auto str = _printer(_data);
+			stream_print(out_string_stream, str.c_str());
+		}
+
+	private:
+		T   _data;
+		Printer _printer;
 	};
+
+	// template<typename Printer>
+	// class EcEntryLambda : public EcEntryBase
+	// {
+	// public:
+	// 	EcEntryLambda(const char* file, unsigned line, const char* descr, Printer&& printer)
+	// 		: EcEntryBase(file, line, descr), _printer(std::move(printer)) {}
+
+	// 	virtual void print_value(StringStream& out_string_stream) const override
+	// 	{
+	// 		const auto str = _printer();
+	// 		stream_print(out_string_stream, str.c_str());
+	// 	}
+
+	// private:
+	// 	Printer _printer;
+	// };
+
+	// template<typename Printer>
+	// EcEntryLambda<Printer> make_ec_entry_lambda(const char* file, unsigned line, const char* descr, Printer&& printer)
+	// {
+	// 	return {file, line, descr, std::move(printer)};
+	// }
+
+	template <class T>
+	struct decay_char_array { using type = T; };
+
+	template <unsigned long long  N>
+	struct decay_char_array<const char(&)[N]> { using type = const char*; };
+
+	template <class T>
+	struct make_const_ptr { using type = T; };
+
+	template <class T>
+	struct make_const_ptr<T*> { using type = const T*; };
+
+	template <class T>
+	struct make_ec_type { using type = typename make_const_ptr<typename decay_char_array<T>::type>::type; };
+
 
 	/* 	A stack trace gives you the names of the function at the point of a crash.
-	    With ERROR_CONTEXT, you can also get the values of select local variables.
-	    Usage:
+		With ERROR_CONTEXT, you can also get the values of select local variables.
+		Usage:
 
-	    void process_customers(const std::string& filename)
-	    {
-	        ERROR_CONTEXT("Processing file", filename.c_str());
-	        for (int customer_index : ...)
-	        {
-	        	ERROR_CONTEXT("Customer index", customer_index);
-	        	...
-	        }
-	    }
+		void process_customers(const std::string& filename)
+		{
+			ERROR_CONTEXT("Processing file", filename.c_str());
+			for (int customer_index : ...)
+			{
+				ERROR_CONTEXT("Customer index", customer_index);
+				...
+			}
+		}
 
-	    The context is in effect during the scope of the ERROR_CONTEXT.
-	    To get the contents of the stack, use get_error_context().
+		The context is in effect during the scope of the ERROR_CONTEXT.
+		Use loguru::get_error_context() to get the contents of the active error contexts.
 
-	    Example result:
+		Example result:
 
-	    ------------------------------------------------
-	    [ErrorContext]                main.cpp:416   Processing file:    'customers.json'
-	    [ErrorContext]                main.cpp:417   Customer index:     42
-	    ------------------------------------------------
+		------------------------------------------------
+		[ErrorContext]                main.cpp:416   Processing file:    "customers.json"
+		[ErrorContext]                main.cpp:417   Customer index:     42
+		------------------------------------------------
 
-	    Error contexts are printed automatically on crashes.
+		Error contexts are printed automatically on crashes, and only on crashes.
+		This makes them much faster than logging the value of a variable.
 	*/
-	#define ERROR_CONTEXT(descr, data)                                              \
-		loguru::ErrorContextScope LOGURU_ANONYMOUS_VARIABLE(error_context_scope_)(  \
-			__FILE__, __LINE__, descr, loguru::make_ec_payload(data)                \
-		)
+	#define ERROR_CONTEXT(descr, data)                                             \
+		const loguru::EcEntryData<loguru::make_ec_type<decltype(data)>::type>      \
+			LOGURU_ANONYMOUS_VARIABLE(error_context_scope_)(                       \
+				__FILE__, __LINE__, descr, data,                                   \
+				static_cast<loguru::EcEntryData<loguru::make_ec_type<decltype(data)>::type>::Printer>(loguru::ec_to_text) ) // For better error messages
+
+/*
+	#define ERROR_CONTEXT(descr, data)                                 \
+		const auto LOGURU_ANONYMOUS_VARIABLE(error_context_scope_)(    \
+			loguru::make_ec_entry_lambda(__FILE__, __LINE__, descr,    \
+				[=](){ return loguru::ec_to_text(data); }))
+*/
 
 	// Get a string describing the current stack of error context. Empty string if there is none.
 	Text get_error_context();
 
-	// These are called when the get_error_context() is called.
-	template<typename T>
-	void ec_printer_impl(StringStream* string_stream, T ec_data);
-
-	template<typename T>
-	inline void ec_format(StringStream* string_stream, EcData ec_data)
-	{
-		ec_printer_impl(string_stream, from_ec_data<T>(ec_data));
-	}
-
 	// ------------------------------------------------------------------------
 
-	#define LOGURU_DECLARE_EC_TYPE(Type)                   \
-		inline EcPayload make_ec_payload(Type data) {       \
-			return { as_ec_data(data), ec_format<Type> };  \
-		}
-
-	LOGURU_DECLARE_EC_TYPE(const char*);
-	LOGURU_DECLARE_EC_TYPE(char);
-	LOGURU_DECLARE_EC_TYPE(int);
-	LOGURU_DECLARE_EC_TYPE(unsigned int);
-	LOGURU_DECLARE_EC_TYPE(long);
-	LOGURU_DECLARE_EC_TYPE(unsigned long);
-	LOGURU_DECLARE_EC_TYPE(long long);
-	LOGURU_DECLARE_EC_TYPE(unsigned long long);
-	LOGURU_DECLARE_EC_TYPE(float);
-	LOGURU_DECLARE_EC_TYPE(double);
-	LOGURU_DECLARE_EC_TYPE(long double);
+	Text ec_to_text(const char* data);
+	Text ec_to_text(char data);
+	Text ec_to_text(int data);
+	Text ec_to_text(unsigned int data);
+	Text ec_to_text(long data);
+	Text ec_to_text(unsigned long data);
+	Text ec_to_text(long long data);
+	Text ec_to_text(unsigned long long data);
+	Text ec_to_text(float data);
+	Text ec_to_text(double data);
+	Text ec_to_text(long double data);
 
 	/*
-	You can add ERROR_CONTEXT support for your own types with the help of
-	LOGURU_DECLARE_EC_TYPE and ec_printer_impl. Here's how:
+	You can add ERROR_CONTEXT support for your own types by overloading ec_to_text. Here's how:
 
 	some.hpp:
 		namespace loguru {
-			LOGURU_DECLARE_EC_TYPE(MySmallType)
-			LOGURU_DECLARE_EC_TYPE(const MyBigType*)
+			Text ec_to_text(MySmallType data)
+			Text ec_to_text(const MyBigType* data)
 		} // namespace loguru
 
 	some.cpp:
 		namespace loguru {
-			template<>
-			void ec_printer_impl(StringStream* string_stream, MySmallType value)
+			Text ec_to_text(MySmallType small_value)
 			{
 				// Called only when needed, i.e. on a crash.
-				std::string str = value.as_string(); // Format 'value' here somehow.
-				stream_print(string_stream, str.c_str());
+				std::string str = small_value.as_string(); // Format 'small_value' here somehow.
+				return Text{strdup(str.c_str())};
 			}
 
-			template<>
-			void ec_printer_impl(StringStream* string_stream, const MyBigType* value)
+			Text ec_to_text(const MyBigType* big_value)
 			{
 				// Called only when needed, i.e. on a crash.
-				std::string str = value->as_string(); // Format 'value' here somehow.
-				stream_print(string_stream, str.c_str());
+				std::string str = big_value->as_string(); // Format 'big_value' here somehow.
+				return Text{strdup(str.c_str())};
 			}
 		} // namespace loguru
 
@@ -671,9 +750,9 @@ namespace loguru
 		{                                                                                          \
 			auto str_left = loguru::format_value(val_left);                                        \
 			auto str_right = loguru::format_value(val_right);                                      \
-			auto fail_info = loguru::strprintf("CHECK FAILED:  %s %s %s  (%s %s %s)  ",            \
+			auto fail_info = loguru::textprintf("CHECK FAILED:  %s %s %s  (%s %s %s)  ",            \
 				#expr_left, #op, #expr_right, str_left.c_str(), #op, str_right.c_str());           \
-			auto user_msg = loguru::strprintf(__VA_ARGS__);                                        \
+			auto user_msg = loguru::textprintf(__VA_ARGS__);                                        \
 			loguru::log_and_abort(0, fail_info.c_str(), __FILE__, __LINE__,                        \
 								  "%s", user_msg.c_str());                                         \
 		}                                                                                          \
@@ -730,23 +809,35 @@ namespace loguru
 	#endif
 #endif // LOGURU_REDEFINE_ASSERT
 
+#endif // LOGURU_HAS_DECLARED_FORMAT_HEADER
+
 // ----------------------------------------------------------------------------
 // .dP"Y8 888888 88""Yb 888888    db    8b    d8 .dP"Y8
 // `Ybo."   88   88__dP 88__     dPYb   88b  d88 `Ybo."
 // o.`Y8b   88   88"Yb  88""    dP__Yb  88YbdP88 o.`Y8b
 // 8bodP'   88   88  Yb 888888 dP""""Yb 88 YY 88 8bodP'
 
-#if LOGURU_WITH_STREAMS || LOGURU_REPLACE_GLOG
+#if LOGURU_WITH_STREAMS
+#ifndef LOGURU_HAS_DECLARED_STREAMS_HEADER
+#define LOGURU_HAS_DECLARED_STREAMS_HEADER
 
 /* This file extends loguru to enable std::stream-style logging, a la Glog.
    It's an optional feature beind the LOGURU_WITH_STREAMS settings
    because including it everywhere will slow down compilation times.
 */
 
+#include <cstdarg>
 #include <sstream> // Adds about 38 kLoC on clang.
+#include <string>
 
 namespace loguru
 {
+	// Like sprintf, but returns the formated text.
+	std::string strprintf(LOGURU_FORMAT_STRING_TYPE format, ...) LOGURU_PRINTF_LIKE(1, 2);
+
+	// Like vsprintf, but returns the formated text.
+	std::string vstrprintf(LOGURU_FORMAT_STRING_TYPE format, va_list) LOGURU_PRINTF_LIKE(1, 0);
+
 	class StreamLogger : public std::ostringstream
 	{
 	public:
@@ -949,15 +1040,11 @@ namespace loguru
 	#define DCHECK_GE      DCHECK_GE_S
 	#define VLOG_IS_ON(verbosity) ((verbosity) <= loguru::current_verbosity_cutoff())
 
-	#define FLAGS_v                loguru::g_stderr_verbosity
-	#define FLAGS_alsologtostderr  loguru::g_alsologtostderr
-	#define FLAGS_colorlogtostderr loguru::g_colorlogtostderr
-
 #endif // LOGURU_REPLACE_GLOG
 
-#endif // LOGURU_WITH_STREAMS || LOGURU_REPLACE_GLOG
+#endif // LOGURU_WITH_STREAMS
 
-#endif // LOGURU_HEADER_HPP
+#endif // LOGURU_HAS_DECLARED_STREAMS_HEADER
 
 // ----------------------------------------------------------------------------
 // 88 8b    d8 88""Yb 88     888888 8b    d8 888888 88b 88 888888    db    888888 88  dP"Yb  88b 88
@@ -986,11 +1073,8 @@ This will define all the Loguru functions so that the linker may find them.
 #include <mutex>
 #include <regex>
 #include <string>
+#include <thread>
 #include <vector>
-
-#ifdef LOGURU_FLUSH_INTERVAL_MS
-	#include <thread>
-#endif
 
 #ifdef _MSC_VER
 	#include <direct.h>
@@ -998,6 +1082,10 @@ This will define all the Loguru functions so that the linker may find them.
 	#include <signal.h>
 	#include <sys/stat.h> // mkdir
 	#include <unistd.h>   // STDERR_FILENO
+#endif
+
+#ifdef __APPLE__
+    #include "TargetConditionals.h"
 #endif
 
 // TODO: use defined(_POSIX_VERSION) for some of these things?
@@ -1056,12 +1144,12 @@ namespace loguru
 
 	const auto s_start_time = system_clock::now();
 
-	Verbosity g_stderr_verbosity = Verbosity_0;
-	bool      g_alsologtostderr  = true;
-	bool      g_colorlogtostderr = true;
+	Verbosity g_stderr_verbosity  = Verbosity_0;
+	bool      g_colorlogtostderr  = true;
+	unsigned  g_flush_interval_ms = 0;
 
 	static std::recursive_mutex  s_mutex;
-	static Verbosity             s_max_out_verbosity = Verbosity_NOTHING;
+	static Verbosity             s_max_out_verbosity = Verbosity_OFF;
 	static std::string           s_argv0_filename;
 	static std::string           s_file_arguments;
 	static CallbackVec           s_callbacks;
@@ -1070,10 +1158,9 @@ namespace loguru
 	static bool                  s_strip_file_path = true;
 	static std::atomic<unsigned> s_stderr_indentation { 0 };
 
-#ifdef LOGURU_FLUSH_INTERVAL_MS
+	// For periodic flushing:
 	static std::thread* s_flush_thread   = nullptr;
 	static bool         s_needs_flushing = false;
-#endif
 
 	static const bool s_terminal_has_color = [](){
 		#ifdef _MSC_VER
@@ -1081,11 +1168,11 @@ namespace loguru
 		#else
 			if (const char* term = getenv("TERM")) {
 				return 0 == strcmp(term, "cygwin")
-				    || 0 == strcmp(term, "linux")
-				    || 0 == strcmp(term, "screen")
-				    || 0 == strcmp(term, "xterm")
-				    || 0 == strcmp(term, "xterm-256color")
-				    || 0 == strcmp(term, "xterm-color");
+					|| 0 == strcmp(term, "linux")
+					|| 0 == strcmp(term, "screen")
+					|| 0 == strcmp(term, "xterm")
+					|| 0 == strcmp(term, "xterm-256color")
+					|| 0 == strcmp(term, "xterm-color");
 			} else {
 				return false;
 			}
@@ -1137,9 +1224,9 @@ namespace loguru
 		FILE* file = reinterpret_cast<FILE*>(user_data);
 		fprintf(file, "%s%s%s%s\n",
 			message.preamble, message.indentation, message.prefix, message.message);
-		#ifndef LOGURU_FLUSH_INTERVAL_MS
+		if (g_flush_interval_ms == 0) {
 			fflush(file);
-		#endif
+		}
 	}
 
 	void file_close(void* user_data)
@@ -1161,7 +1248,7 @@ namespace loguru
 	Text::~Text() { free(_str); }
 
 	LOGURU_PRINTF_LIKE(1, 0)
-	static Text strprintfv(const char* format, va_list vlist)
+	static Text vtextprintf(const char* format, va_list vlist)
 	{
 #ifdef _MSC_VER
 		int bytes_needed = vsnprintf(nullptr, 0, format, vlist);
@@ -1177,17 +1264,17 @@ namespace loguru
 #endif
 	}
 
-	Text strprintf(const char* format, ...)
+	Text textprintf(const char* format, ...)
 	{
 		va_list vlist;
 		va_start(vlist, format);
-		auto result = strprintfv(format, vlist);
+		auto result = vtextprintf(format, vlist);
 		va_end(vlist);
 		return result;
 	}
 
 	// Overloaded for variadic template matching.
-	Text strprintf()
+	Text textprintf()
 	{
 		return Text(static_cast<char*>(calloc(1, 1)));
 	}
@@ -1227,7 +1314,23 @@ namespace loguru
 					out_argc -= 1;
 				}
 				if (*value_str == '=') { value_str += 1; }
-				g_stderr_verbosity = atoi(value_str);
+
+				if (strcmp(value_str, "OFF") == 0) {
+					g_stderr_verbosity = Verbosity_OFF;
+				} else if (strcmp(value_str, "INFO") == 0) {
+					g_stderr_verbosity = Verbosity_INFO;
+				} else if (strcmp(value_str, "WARNING") == 0) {
+					g_stderr_verbosity = Verbosity_WARNING;
+				} else if (strcmp(value_str, "ERROR") == 0) {
+					g_stderr_verbosity = Verbosity_ERROR;
+				} else if (strcmp(value_str, "FATAL") == 0) {
+					g_stderr_verbosity = Verbosity_FATAL;
+				} else {
+					char* end = 0;
+					g_stderr_verbosity = static_cast<int>(strtol(value_str, &end, 10));
+					CHECK_F(end && *end == '\0',
+						"Invalid verbosity. Expected integer, INFO, WARNING, ERROR or OFF, got '%s'", value_str);
+				}
 			} else {
 				argv[arg_dest++] = argv[arg_it];
 			}
@@ -1280,7 +1383,7 @@ namespace loguru
 		#if LOGURU_PTLS_NAMES
 			set_thread_name("main thread");
 		#elif LOGURU_PTHREADS
-			char old_thread_name[128] = {0};
+			char old_thread_name[16] = {0};
 			auto this_thread = pthread_self();
 			pthread_getname_np(this_thread, old_thread_name, sizeof(old_thread_name));
 			if (old_thread_name[0] == 0) {
@@ -1292,7 +1395,7 @@ namespace loguru
 			}
 		#endif // LOGURU_PTHREADS
 
-		if (g_alsologtostderr) {
+		if (g_stderr_verbosity >= Verbosity_INFO) {
 			if (g_colorlogtostderr && s_terminal_has_color) {
 				fprintf(stderr, "%s%s%s\n", terminal_reset(), terminal_dim(), PREAMBLE_EXPLAIN);
 			} else {
@@ -1444,7 +1547,7 @@ namespace loguru
 
 	static void on_callback_change()
 	{
-		s_max_out_verbosity = Verbosity_NOTHING;
+		s_max_out_verbosity = Verbosity_OFF;
 		for (const auto& callback : s_callbacks)
 		{
 			s_max_out_verbosity = std::max(s_max_out_verbosity, callback.verbosity);
@@ -1476,7 +1579,7 @@ namespace loguru
 	Verbosity current_verbosity_cutoff()
 	{
 		return g_stderr_verbosity > s_max_out_verbosity ?
-		       g_stderr_verbosity : s_max_out_verbosity;
+			   g_stderr_verbosity : s_max_out_verbosity;
 	}
 
 	void set_thread_name(const char* name)
@@ -1503,6 +1606,41 @@ namespace loguru
 		return static_cast<const char*>(pthread_getspecific(s_pthread_key_name));
 	}
 #endif // LOGURU_PTLS_NAMES
+
+	void get_thread_name(char* buffer, unsigned long long length, bool right_align_hext_id)
+	{
+		CHECK_NE_F(length, 0u, "Zero length buffer in get_thread_name");
+		CHECK_NOTNULL_F(buffer, "nullptr in get_thread_name");
+#if LOGURU_PTHREADS
+		auto thread = pthread_self();
+		#if LOGURU_PTLS_NAMES
+			if (const char* name = get_thread_name_ptls()) {
+				snprintf(buffer, length, "%s", name);
+			} else {
+				buffer[0] = 0;
+			}
+		#else
+			pthread_getname_np(thread, buffer, length);
+		#endif
+
+		if (buffer[0] == 0) {
+			#ifdef __APPLE__
+				uint64_t thread_id;
+				pthread_threadid_np(thread, &thread_id);
+			#else
+				uint64_t thread_id = thread;
+			#endif
+			if (right_align_hext_id) {
+				snprintf(buffer, length, "%*X", length - 1, static_cast<unsigned>(thread_id));
+			} else {
+				snprintf(buffer, length, "%X", static_cast<unsigned>(thread_id));
+			}
+		}
+#else // LOGURU_PTHREADS
+		buffer[0] = 0;
+#endif // LOGURU_PTHREADS
+
+	}
 
 	// ------------------------------------------------------------------------
 	// Stack traces
@@ -1645,32 +1783,8 @@ namespace loguru
 		auto uptime_ms = duration_cast<milliseconds>(now - s_start_time).count();
 		auto uptime_sec = uptime_ms / 1000.0;
 
-		#if LOGURU_PTHREADS
-			char thread_name[THREAD_NAME_WIDTH + 1] = {0};
-
-			auto thread = pthread_self();
-			#if LOGURU_PTLS_NAMES
-				if (const char* name = get_thread_name_ptls()) {
-					snprintf(thread_name, sizeof(thread_name), "%s", name);
-				} else {
-					thread_name[0] = 0;
-				}
-			#else
-				pthread_getname_np(thread, thread_name, sizeof(thread_name));
-			#endif
-
-			if (thread_name[0] == 0) {
-				#ifdef __APPLE__
-					uint64_t thread_id;
-					pthread_threadid_np(thread, &thread_id);
-				#else
-					uint64_t thread_id = thread;
-				#endif
-				snprintf(thread_name, sizeof(thread_name), "%16X", static_cast<unsigned>(thread_id));
-			}
-		#else // LOGURU_PTHREADS
-			const char* thread_name = "";
-		#endif // LOGURU_PTHREADS
+		char thread_name[THREAD_NAME_WIDTH + 1] = {0};
+		get_thread_name(thread_name, THREAD_NAME_WIDTH + 1, true);
 
 		if (s_strip_file_path) {
 			file = filename(file);
@@ -1717,7 +1831,7 @@ namespace loguru
 			message.indentation = indentation(s_stderr_indentation);
 		}
 
-		if (g_alsologtostderr && verbosity <= g_stderr_verbosity) {
+		if (verbosity <= g_stderr_verbosity) {
 			if (g_colorlogtostderr && s_terminal_has_color) {
 				if (verbosity > Verbosity_WARNING) {
 					fprintf(stderr, "%s%s%s%s%s%s%s%s%s\n",
@@ -1746,11 +1860,11 @@ namespace loguru
 					message.preamble, message.indentation, message.prefix, message.message);
 			}
 
-			#ifdef LOGURU_FLUSH_INTERVAL_MS
-				s_needs_flushing = true;
-			#else
+			if (g_flush_interval_ms == 0) {
 				fflush(stderr);
-			#endif
+			} else {
+				s_needs_flushing = true;
+			}
 		}
 
 		for (auto& p : s_callbacks) {
@@ -1759,24 +1873,22 @@ namespace loguru
 					message.indentation = indentation(p.indentation);
 				}
 				p.callback(p.user_data, message);
-				#ifdef LOGURU_FLUSH_INTERVAL_MS
+				if (g_flush_interval_ms > 0) {
 					s_needs_flushing = true;
-				#endif
+				}
 			}
 		}
 
-		#ifdef LOGURU_FLUSH_INTERVAL_MS
-			if (!s_flush_thread) {
-				s_flush_thread = new std::thread([](){
-					for (;;) {
-						if (s_needs_flushing) {
-							flush();
-						}
-						std::this_thread::sleep_for(std::chrono::milliseconds(LOGURU_FLUSH_INTERVAL_MS));
+		if (g_flush_interval_ms > 0 && !s_flush_thread) {
+			s_flush_thread = new std::thread([](){
+				for (;;) {
+					if (s_needs_flushing) {
+						flush();
 					}
-				});
-			}
-		#endif
+					std::this_thread::sleep_for(std::chrono::milliseconds(g_flush_interval_ms));
+				}
+			});
+		}
 
 		if (message.verbosity == Verbosity_FATAL) {
 			flush();
@@ -1798,8 +1910,8 @@ namespace loguru
 
 	// stack_trace_skip is just if verbosity == FATAL.
 	void log_to_everywhere(int stack_trace_skip, Verbosity verbosity,
-	                       const char* file, unsigned line,
-	                       const char* prefix, const char* buff)
+						   const char* file, unsigned line,
+						   const char* prefix, const char* buff)
 	{
 		char preamble_buff[128];
 		print_preamble(preamble_buff, sizeof(preamble_buff), verbosity, file, line);
@@ -1811,7 +1923,7 @@ namespace loguru
 	{
 		va_list vlist;
 		va_start(vlist, format);
-		auto buff = strprintfv(format, vlist);
+		auto buff = vtextprintf(format, vlist);
 		log_to_everywhere(1, verbosity, file, line, "", buff.c_str());
 		va_end(vlist);
 	}
@@ -1820,7 +1932,7 @@ namespace loguru
 	{
 		va_list vlist;
 		va_start(vlist, format);
-		auto buff = strprintfv(format, vlist);
+		auto buff = vtextprintf(format, vlist);
 		auto message = Message{verbosity, file, line, "", "", "", buff.c_str()};
 		log_message(1, message, false, true);
 		va_end(vlist);
@@ -1834,9 +1946,7 @@ namespace loguru
 		{
 			callback.flush(callback.user_data);
 		}
-		#ifdef LOGURU_FLUSH_INTERVAL_MS
-			s_needs_flushing = false;
-		#endif
+		s_needs_flushing = false;
 	}
 
 	LogScopeRAII::LogScopeRAII(Verbosity verbosity, const char* file, unsigned line, const char* format, ...)
@@ -1891,7 +2001,7 @@ namespace loguru
 	{
 		va_list vlist;
 		va_start(vlist, format);
-		auto buff = strprintfv(format, vlist);
+		auto buff = vtextprintf(format, vlist);
 		log_to_everywhere(stack_trace_skip + 1, Verbosity_FATAL, file, line, expr, buff.c_str());
 		va_end(vlist);
 		abort(); // log_to_everywhere already does this, but this makes the analyzer happy.
@@ -1905,7 +2015,23 @@ namespace loguru
 	// ----------------------------------------------------------------------------
 	// Streams:
 
-	#if LOGURU_WITH_STREAMS || LOGURU_REPLACE_GLOG
+	std::string vstrprintf(const char* format, va_list vlist)
+	{
+		auto text = vtextprintf(format, vlist);
+		std::string result = text.c_str();
+		return result;
+	}
+
+	std::string strprintf(const char* format, ...)
+	{
+		va_list vlist;
+		va_start(vlist, format);
+		auto result = vstrprintf(format, vlist);
+		va_end(vlist);
+		return result;
+	}
+
+	#if LOGURU_WITH_STREAMS
 
 	StreamLogger::~StreamLogger()
 	{
@@ -1919,7 +2045,7 @@ namespace loguru
 		loguru::log_and_abort(1, _expr, _file, _line, "%s", message.c_str());
 	}
 
-	#endif // LOGURU_WITH_STREAMS || LOGURU_REPLACE_GLOG
+	#endif // LOGURU_WITH_STREAMS
 
 	// ----------------------------------------------------------------------------
 	// 888888 88""Yb 88""Yb  dP"Yb  88""Yb      dP""b8  dP"Yb  88b 88 888888 888888 Yb  dP 888888
@@ -1934,78 +2060,75 @@ namespace loguru
 	};
 
 	// Use this in your EcPrinter implementations.
-	void stream_print(StringStream* string_stream, const char* text)
+	void stream_print(StringStream& out_string_stream, const char* text)
 	{
-		string_stream->str += text;
+		out_string_stream.str += text;
 	}
 
 	// ----------------------------------------------------------------------------
 
-	struct EcEntry
+	using ECPtr = EcEntryBase*;
+
+#if defined(_WIN32) || (defined(TARGET_OS_MAC) && TARGET_OS_MAC)
+	#ifdef __APPLE__
+		#define LOGURU_THREAD_LOCAL __thread
+	#else
+		#define LOGURU_THREAD_LOCAL thread_local
+	#endif
+	static LOGURU_THREAD_LOCAL ECPtr thread_ec_ptr = nullptr;
+
+	ECPtr& get_thread_ec_head_ref()
 	{
-		const char* _file;
-		unsigned    _line;
-		const char* _descr;
-		EcPayload   _payload;
-	};
-
-	using EcStack = std::vector<EcEntry>;
-
-	// ----------------------------------------------------------------------------
-
-#ifdef _WIN32
-	Text as_string()
-	{
-		return Text(strdup(""));
+		return thread_ec_ptr;
 	}
-
-	ErrorContextScope::ErrorContextScope(const char*, unsigned, const char*, EcPayload&&)
-	{
-	}
-
-	ErrorContextScope::~ErrorContextScope()
-	{
-	}
-
-#else // !_WIN32
+#else // !thread_local
 	static pthread_once_t s_ec_pthread_once = PTHREAD_ONCE_INIT;
 	static pthread_key_t  s_ec_pthread_key;
 
-	void free_error_context(void* io_error_context)
+	void free_ec_head_ref(void* io_error_context)
 	{
-		delete reinterpret_cast<EcStack*>(io_error_context);
+		delete reinterpret_cast<ECPtr*>(io_error_context);
 	}
 
 	void ec_make_pthread_key()
 	{
-		(void)pthread_key_create(&s_ec_pthread_key, free_error_context);
+		(void)pthread_key_create(&s_ec_pthread_key, free_ec_head_ref);
 	}
 
-	EcStack& get_thread_error_context_stack()
+	ECPtr& get_thread_ec_head_ref()
 	{
 		(void)pthread_once(&s_ec_pthread_once, ec_make_pthread_key);
-		auto ec = reinterpret_cast<EcStack*>(pthread_getspecific(s_ec_pthread_key));
+		auto ec = reinterpret_cast<ECPtr*>(pthread_getspecific(s_ec_pthread_key));
 		if (ec == nullptr) {
-			ec = new EcStack();
+			ec = new ECPtr(nullptr);
 			(void)pthread_setspecific(s_ec_pthread_key, ec);
 		}
 		return *ec;
 	}
+#endif // !thread_local
 
 	// ----------------------------------------------------------------------------
 
 	Text get_error_context()
 	{
-		const auto& stack = get_thread_error_context_stack();
+		const EcEntryBase* ec_head = get_thread_ec_head_ref();
+
+		std::vector<const EcEntryBase*> stack;
+		while (ec_head) {
+			stack.push_back(ec_head);
+			ec_head = ec_head->_previous;
+		}
+		std::reverse(stack.begin(), stack.end());
+
 		StringStream result;
 		if (!stack.empty()) {
 			result.str += "------------------------------------------------\n";
-			for (const auto& entry : stack) {
-				const auto description = std::string(entry._descr) + ":";
-				auto prefix = strprintf("[ErrorContext] %23s:%-5u %-20s ",
-					filename(entry._file), entry._line, description.c_str());
+			for (auto entry : stack) {
+				const auto description = std::string(entry->_descr) + ":";
+				auto prefix = textprintf("[ErrorContext] %23s:%-5u %-20s ",
+					filename(entry->_file), entry->_line, description.c_str());
 				result.str += prefix.c_str();
-				entry._payload._printer(&result, entry._payload._ec_data);
+				entry->print_value(result);
 				result.str += "\n";
 			}
 			result.str += "------------------------------------------------";
@@ -2013,32 +2136,30 @@ namespace loguru
 		return Text(strdup(result.str.c_str()));
 	}
 
-	ErrorContextScope::ErrorContextScope(const char* file, unsigned line, const char* desc, EcPayload&& se)
+	EcEntryBase::EcEntryBase(const char* file, unsigned line, const char* descr)
+		: _file(file), _line(line), _descr(descr)
 	{
-		get_thread_error_context_stack().emplace_back(EcEntry{file, line, desc, se});
+		EcEntryBase*& ec_head = get_thread_ec_head_ref();
+		_previous = ec_head;
+		ec_head = this;
 	}
 
-	ErrorContextScope::~ErrorContextScope()
+	EcEntryBase::~EcEntryBase()
 	{
-		auto& stack = get_thread_error_context_stack();
-		CHECK_F(!stack.empty());
-		stack.pop_back();
+		get_thread_ec_head_ref() = _previous;
 	}
-#endif // !_WIN32
 
 	// ------------------------------------------------------------------------
 
-	template<>
-	void ec_printer_impl(StringStream* string_stream, const char* value)
+	Text ec_to_text(const char* value)
 	{
 		// Add quotes around the string to make it obvious where it begin and ends.
 		// This is great for detecting erroneous leading or trailing spaces in e.g. an identifier.
 		auto str = "\"" + std::string(value) + "\"";
-		stream_print(string_stream, str.c_str());
+		return Text{strdup(str.c_str())};
 	}
 
-	template<>
-	void ec_printer_impl(StringStream* string_stream, char c)
+	Text ec_to_text(char c)
 	{
 		// Add quotes around the character to make it obvious where it begin and ends.
 		std::string str = "'";
@@ -2073,26 +2194,25 @@ namespace loguru
 
 		str += "'";
 
-		stream_print(string_stream, str.c_str());
+		return Text{strdup(str.c_str())};
 	}
 
-	#define DEFINE_EC(Type) \
-		template<>                                                          \
-		void ec_printer_impl(StringStream* string_stream, Type value)       \
-		{                                                                   \
-			auto str = std::to_string(value);                               \
-			stream_print(string_stream, str.c_str());                       \
+	#define DEFINE_EC(Type)                        \
+		Text ec_to_text(Type value)                \
+		{                                          \
+			auto str = std::to_string(value);      \
+			return Text{strdup(str.c_str())};      \
 		}
 
-	DEFINE_EC(int);
-	DEFINE_EC(unsigned int);
-	DEFINE_EC(long);
-	DEFINE_EC(unsigned long);
-	DEFINE_EC(long long);
-	DEFINE_EC(unsigned long long);
-	DEFINE_EC(float);
-	DEFINE_EC(double);
-	DEFINE_EC(long double);
+	DEFINE_EC(int)
+	DEFINE_EC(unsigned int)
+	DEFINE_EC(long)
+	DEFINE_EC(unsigned long)
+	DEFINE_EC(long long)
+	DEFINE_EC(unsigned long long)
+	DEFINE_EC(float)
+	DEFINE_EC(double)
+	DEFINE_EC(long double)
 
 	// ----------------------------------------------------------------------------
 

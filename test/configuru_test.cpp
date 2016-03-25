@@ -1,19 +1,18 @@
-
 #define LOGURU_IMPLEMENTATION 1
-#include "loguru.hpp"
+#include <loguru.hpp>
 
 #define CONFIGURU_ASSERT(test) CHECK_F(test)
 
 #define CONFIGURU_IMPLICIT_CONVERSIONS 0
 #define CONFIGURU_VALUE_SEMANTICS 1
 #define CONFIGURU_IMPLEMENTATION 1
-#include "../configuru.hpp"
+#include <../configuru.hpp>
 
 #include <iostream>
 
 #include <boost/filesystem.hpp>
 
-#include "json.hpp"
+#include <json.hpp>
 
 namespace fs = boost::filesystem;
 using namespace configuru;

@@ -32,6 +32,13 @@ For more info, please se README.md (at www.github.com/emilk/configuru).
 // Yb      Yb   dP 88 Y88 88""   88 Yb  "88 Y8   8P 88"Yb  Y8   8P
 //  YboodP  YbodP  88  Y8 88     88  YboodP `YbodP' 88  Yb `YbodP'
 
+// Disable all warnings from gcc/clang:
+#if defined(__clang__)
+	#pragma clang system_header
+#elif defined(__GNUC__)
+	#pragma GCC system_header
+#endif
+
 #ifndef CONFIGURU_HEADER_HPP
 #define CONFIGURU_HEADER_HPP
 
@@ -187,6 +194,7 @@ namespace configuru
 
 		Config()                     : _type(Uninitialized) { }
 		Config(std::nullptr_t)       : _type(Null)    { }
+		Config(float f)              : _type(Float)   { _u.f = f; }
 		Config(double f)             : _type(Float)   { _u.f = f; }
 		Config(bool b)               : _type(Bool)    { _u.b = b; }
 		Config(int i)                : _type(Int)     { _u.i = i; }
