@@ -1,30 +1,32 @@
 /*
 www.github.com/emilk/configuru
 
-Configuru
-=========
-Configuru, an experimental config library for C++, by Emil Ernerfeldt.
+# Configuru
+	Configuru, an experimental config library for C++, by Emil Ernerfeldt.
 
-License
--------
-This software is in the public domain. Where that dedication is not
-recognized, you are granted a perpetual, irrevocable license to copy
-and modify this file as you see fit.
+# License
+	This software is in the public domain. Where that dedication is not
+	recognized, you are granted a perpetual, irrevocable license to copy
+	and modify this file as you see fit.
 
-That being said, I would appreciate credit!
-If you find this library useful, send a tweet to [@ernerfeldt](https://twitter.com/ernerfeldt) or mail me at emil.ernerfeldt@gmail.com.
+	That being said, I would appreciate credit!
+	If you find this library useful, send a tweet to [@ernerfeldt](https://twitter.com/ernerfeldt) or mail me at emil.ernerfeldt@gmail.com.
 
-Getting started:
-----------------
-For using:
-	`#include <configuru.hpp>`
+# Version history
+	0.00: 2014-07-21 - Initial steps
+	0.10: 2015-11-08 - First commit as stand-alone library
+	0.20: 2016-03-25 - check_dangling changes.
 
-And in one .cpp file:
+# Getting started
+	For using:
+		`#include <configuru.hpp>`
 
-	#define CONFIGURU_IMPLEMENTATION 1
-	#include <configuru.hpp>
+	And in one .cpp file:
 
-For more info, please se README.md (at www.github.com/emilk/configuru).
+		#define CONFIGURU_IMPLEMENTATION 1
+		#include <configuru.hpp>
+
+	For more info, please se README.md (at www.github.com/emilk/configuru).
 */
 
 //  dP""b8  dP"Yb  88b 88 888888 88  dP""b8 88   88 88""Yb 88   88
@@ -68,9 +70,9 @@ For more info, please se README.md (at www.github.com/emilk/configuru).
 #endif // CONFIGURU_ASSERT
 
 #ifndef CONFIGURU_ON_DANGLING
-	#include <iostream>
-	#define CONFIGURU_ON_DANGLING(where, key) \
-		std::cerr << where << "Key '" << key << "' never accessed" << std::endl
+	// CONFIGURU_ON_DANGLING(message_str) is called by check_dangling() if there is any unaccessed keys.
+	#define CONFIGURU_ON_DANGLING(message_str) \
+		CONFIGURU_ONERROR(message_str)
 #endif // CONFIGURU_ON_DANGLING
 
 #define CONFIGURU_NORETURN __attribute__((noreturn))
@@ -553,7 +555,10 @@ namespace configuru
 
 		// ----------------------------------------
 
-		// Will check for dangling (unaccessed) object keys recursively,
+		// Visit dangling (unaccessed) object keys recursively.
+		void visit_dangling(const std::function<void(const std::string& key, const Config& value)>& visitor) const;
+
+		// Will check for dangling (unaccessed) object keys recursively and call CONFIGURU_ON_DANGLING on all found.
 		void check_dangling() const;
 
 		// Set the 'access' flag recursively,
@@ -1415,9 +1420,8 @@ namespace configuru
 	}
 #endif
 
-	void Config::check_dangling() const
+	void Config::visit_dangling(const std::function<void(const std::string& key, const Config& value)>& visitor) const
 	{
-		// TODO: iterating over an object should count as accessing the values
 		if (is_object()) {
 			for (auto&& p : as_object()._impl) {
 				auto&& entry = p.second;
@@ -1425,14 +1429,27 @@ namespace configuru
 				if (entry._accessed) {
 					value.check_dangling();
 				} else {
-					auto where_str = value.where();
-					CONFIGURU_ON_DANGLING(where_str.c_str(), p.first.c_str());
+					visitor(p.first, value);
 				}
 			}
 		} else if (is_array()) {
 			for (auto&& e : as_array()) {
 				e.check_dangling();
 			}
+		}
+	}
+
+	void Config::check_dangling() const
+	{
+		std::string message = "";
+
+		visit_dangling([&](const std::string& key, const Config& value){
+			message += "\n    " + value.where() + "Key '" + key + "' never accessed.";
+		});
+
+		if (!message.empty()) {
+			message = "Dangling keys:" + message;
+			CONFIGURU_ON_DANGLING(message);
 		}
 	}
 
