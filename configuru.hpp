@@ -857,6 +857,7 @@ namespace configuru
 		   An empty string means the output will be compact. */
 		std::string indentation              = "\t";
 		bool        enforce_indentation      = true;  // Must have correct indentation?
+		bool        end_with_newline         = true;  // End each file with a newline (unless compact).
 
 		// Top file:
 		bool        empty_file               = false; // If true, an empty file is an empty object.
@@ -1544,6 +1545,7 @@ namespace configuru
 		format.inf                 = true;
 		format.nan                 = true;
 		format.write_uninitialized = true;
+		format.end_with_newline    = false;
 		return os << dump_string(cfg, format);
 	}
 }
@@ -3129,7 +3131,7 @@ namespace configuru
 		} else {
 			w.write_value(0, config, true, true);
 
-			if (!options.compact())
+			if (options.end_with_newline &&  !options.compact())
 			{
 				w._out += "\n"; // Good form
 			}
