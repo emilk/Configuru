@@ -1,7 +1,9 @@
+#include "simple_test.hpp"
+
 #define LOGURU_IMPLEMENTATION 1
 #include <loguru.hpp>
 
-#define CONFIGURU_ASSERT(test) CHECK_F(test)
+#define CONFIGURU_ASSERT(test) TEST(test)
 
 #define CONFIGURU_IMPLICIT_CONVERSIONS 0
 #define CONFIGURU_VALUE_SEMANTICS 1
@@ -17,35 +19,7 @@
 namespace fs = boost::filesystem;
 using namespace configuru;
 
-const std::string PASS_STRING = std::string(loguru::terminal_green()) + "PASS: " + loguru::terminal_reset();
-const std::string FAIL_STRING = std::string(loguru::terminal_red())   + "FAIL: " + loguru::terminal_reset();
-
-struct Tester
-{
-	size_t num_run    = 0;
-	size_t num_failed = 0;
-
-	void print_pass(const std::string& test_name)
-	{
-		// std::cout << PASS_STRING << test_name << std::endl;
-		(void)test_name;
-		num_run += 1;
-	}
-
-	void print_pass(const std::string& test_name, const std::string& extra)
-	{
-		// std::cout << PASS_STRING << test_name << ": " << extra << std::endl << std::endl;
-		(void)test_name; (void)extra;
-		num_run += 1;
-	}
-
-	void print_fail(const std::string& test_name, const std::string& extra)
-	{
-		std::cout << FAIL_STRING << test_name << ": " << extra << std::endl << std::endl;
-		num_run += 1;
-		num_failed += 1;
-	}
-};
+// ----------------------------------------------------------------------------
 
 std::vector<fs::path> list_files(fs::path directory, std::string extension)
 {
@@ -61,94 +35,73 @@ std::vector<fs::path> list_files(fs::path directory, std::string extension)
     return result;
 }
 
-void test_code(Tester& tester, std::string test_name, bool should_pass, std::function<void()> code)
+void test_parse(FormatOptions options, bool should_pass, fs::path path)
 {
-	try {
-		code();
-
-		if (should_pass) {
-			tester.print_pass(test_name);
-		} else {
-			tester.print_fail(test_name, "Should not have parsed");
-		}
-	} catch (std::exception& e) {
-		if (should_pass) {
-			tester.print_fail(test_name, e.what());
-		} else {
-			tester.print_pass(test_name, e.what());
-		}
-	}
-}
-
-void test_parse(Tester& tester, FormatOptions options, bool should_pass, fs::path path)
-{
-	test_code(tester, path.filename().string(), should_pass, [&](){
+	test_code(path.filename().string(), should_pass, [&](){
 		parse_file(path.string(), options);
 	});
 }
 
-void test_all_in(Tester& tester, FormatOptions options, bool should_pass, fs::path dir, std::string extension)
+void test_all_in(FormatOptions options, bool should_pass, fs::path dir, std::string extension)
 {
 	for (auto path : list_files(dir, extension)) {
-		test_parse(tester, options, should_pass, path.string());
+		test_parse(options, should_pass, path.string());
 	}
 }
 
 template<typename T>
-void test_roundtrip(Tester& tester, FormatOptions options, T value)
+void test_roundtrip(FormatOptions options, T value)
 {
 	std::string serialized = dump_string(Config(value), options);
 	auto parsed_config = parse_string(serialized.c_str(), options, "roundtrip");
 	T parsed_value = (T)parsed_config;
 	if (value == parsed_value) {
-		tester.print_pass(serialized);
+		s_tester.print_pass(serialized);
 	} else {
-		tester.print_fail("round-trip", serialized);
+		s_tester.print_fail("round-trip", serialized);
 	}
 }
 
 template<typename T>
-void test_writer(Tester& tester, FormatOptions options, std::string name, T value, const std::string& expected)
+void test_writer(FormatOptions options, std::string name, T value, const std::string& expected)
 {
 	std::string serialized = dump_string(Config(value), options);
 	if (serialized[serialized.size() - 1] == '\n') {
 		serialized.resize(serialized.size() - 1);
 	}
 	if (serialized == expected) {
-		tester.print_pass(name);
+		s_tester.print_pass(name);
 	} else {
-		tester.print_fail(name, "Expected: '" + expected + "', got: '" + serialized + "'");
+		s_tester.print_fail(name, "Expected: '" + expected + "', got: '" + serialized + "'");
 	}
 }
 
-void test_special(Tester& tester)
+void test_special()
 {
-	LOG_SCOPE_FUNCTION(0);
 	auto format = JSON;
 	format.enforce_indentation = true;
 	format.indentation = "\t";
-	test_parse(tester, format, false, "../../test_suite/special/two_spaces_indentation.json");
+	test_parse(format, false, "../../test_suite/special/two_spaces_indentation.json");
 
 	format.indentation = "    ";
-	test_parse(tester, format, false, "../../test_suite/special/two_spaces_indentation.json");
+	test_parse(format, false, "../../test_suite/special/two_spaces_indentation.json");
 
 	format.indentation = "  ";
-	test_parse(tester, format, true, "../../test_suite/special/two_spaces_indentation.json");
+	test_parse(format, true, "../../test_suite/special/two_spaces_indentation.json");
 
-	test_roundtrip(tester, JSON, 0.1);
-	test_roundtrip(tester, JSON, 0.1f);
-	test_roundtrip(tester, JSON, 3.14);
-	test_roundtrip(tester, JSON, 3.14f);
-	test_roundtrip(tester, JSON, 3.14000010490417);
-	test_roundtrip(tester, JSON, 1234567890123456ll);
+	test_roundtrip(JSON, 0.1);
+	test_roundtrip(JSON, 0.1f);
+	test_roundtrip(JSON, 3.14);
+	test_roundtrip(JSON, 3.14f);
+	test_roundtrip(JSON, 3.14000010490417);
+	test_roundtrip(JSON, 1234567890123456ll);
 
-	test_writer(tester, JSON, "3.14 (double)", 3.14,  "3.14");
-	test_writer(tester, JSON, "3.14f (float)", 3.14f, "3.14");
+	test_writer(JSON, "3.14 (double)", 3.14,  "3.14");
+	test_writer(JSON, "3.14f (float)", 3.14f, "3.14");
 }
 
-void test_roundtrip_string(Tester& tester)
+void test_roundtrip_string()
 {
-	LOG_SCOPE_FUNCTION(0);
 	auto test_roundtrip = [&](const std::string& json)
 	{
 		Config cfg = parse_string(json.c_str(), JSON, "roundtrip");
@@ -157,9 +110,9 @@ void test_roundtrip_string(Tester& tester)
 			serialized.resize(serialized.size() - 1);
 		}
 		if (json == serialized) {
-			tester.print_pass(json);
+			s_tester.print_pass(json);
 		} else {
-			tester.print_fail("round-trip", "Expected: '" + json + "', got: '" + serialized + "'");
+			s_tester.print_fail("round-trip", "Expected: '" + json + "', got: '" + serialized + "'");
 		}
 	};
 
@@ -178,16 +131,15 @@ void test_roundtrip_string(Tester& tester)
 	test_roundtrip("3.14");
 }
 
-void test_strings(Tester& tester)
+void test_strings()
 {
-	LOG_SCOPE_FUNCTION(0);
 	auto test_string = [&](const std::string& json, const std::string& expected)
 	{
 		std::string output = parse_string(json.c_str(), JSON, "string").as_string();
 		if (output == expected) {
-			tester.print_pass(expected);
+			s_tester.print_pass(expected);
 		} else {
-			tester.print_fail(json, "Got: '" + output + ", expected: '" + expected + "'");
+			s_tester.print_fail(json, "Got: '" + output + ", expected: '" + expected + "'");
 		}
 	};
 
@@ -203,16 +155,15 @@ void test_strings(Tester& tester)
     test_string("\"\\uD834\\uDD1E\"",           "\xF0\x9D\x84\x9E"); // G clef sign U+1D11E
 }
 
-void test_doubles(Tester& tester)
+void test_doubles()
 {
-	LOG_SCOPE_FUNCTION(0);
 	auto test_double = [&](const std::string& json, const double expected)
 	{
 		double output = (double)parse_string(json.c_str(), JSON, "string");
 		if (output == expected) {
-			tester.print_pass(json);
+			s_tester.print_pass(json);
 		} else {
-			tester.print_fail(json, std::to_string(output) + " != " + std::to_string(expected));
+			s_tester.print_fail(json, std::to_string(output) + " != " + std::to_string(expected));
 		}
 	};
 
@@ -326,39 +277,38 @@ void test_doubles(Tester& tester)
         2.2250738585072014e-308);
 }
 
-void test_bad_usage(Tester& tester)
+void test_bad_usage()
 {
-	LOG_SCOPE_FUNCTION(0);
 	auto config = parse_file("../../test_suite/special/config.json", JSON);
-	test_code(tester, "access_float_as_float", true, [&]{
+	test_code("access_float_as_float", true, [&]{
 		auto b = (float)config["pi"];
 		(void)b;
 	});
-	test_code(tester, "access_float_bool", false, [&]{
+	test_code("access_float_bool", false, [&]{
 		auto f = (bool)config["pi"];
 		(void)f;
 	});
-	test_code(tester, "key_not_found", false, [&]{
+	test_code("key_not_found", false, [&]{
 		std::cout << (float)config["obj"]["does_not_exist"];
 	});
-	test_code(tester, "indexing_non_array", false, [&]{
+	test_code("indexing_non_array", false, [&]{
 		std::cout << (float)config["pi"][5];
 	});
-	test_code(tester, "out_of_bounds", false, [&]{
+	test_code("out_of_bounds", false, [&]{
 		std::cout << (float)config["array"][5];
 	});
 
-	test_code(tester, "assign_to_non_object", false, []{
+	test_code("assign_to_non_object", false, []{
 		Config cfg;
 		cfg["hello"] = 42;
 	});
 
-	test_code(tester, "read_from_non_object", false, []{
+	test_code("read_from_non_object", false, []{
 		const Config cfg;
 		std::cout << cfg["hello"];
 	});
 
-	test_code(tester, "assign_to_non_array", false, []{
+	test_code("assign_to_non_array", false, []{
 		Config cfg;
 		cfg.push_back("hello");
 	});
@@ -366,40 +316,29 @@ void test_bad_usage(Tester& tester)
 
 void run_unit_tests()
 {
-	LOG_SCOPE_FUNCTION(0);
-	Tester tester;
-	std::cout << "JSON expected to pass:" << std::endl;
-	test_all_in(tester, JSON, true, "../../test_suite/json_pass",      ".json");
-	test_all_in(tester, JSON, true, "../../test_suite/json_only_pass", ".json");
+	// JSON expected to pass:
+	test_all_in(JSON, true,  "../../test_suite/json_pass",      ".json");
+	test_all_in(JSON, true,  "../../test_suite/json_only_pass", ".json");
 
-	std::cout << std::endl << "JSON expected to fail:" << std::endl;
-	test_all_in(tester, JSON, false, "../../test_suite/json_fail", ".json");
-	test_all_in(tester, JSON, false, "../../test_suite/cfg_pass",  ".cfg");
-	test_all_in(tester, JSON, false, "../../test_suite/cfg_fail",  ".cfg");
+	// JSON expected to fail:
+	test_all_in(JSON, false, "../../test_suite/json_fail",      ".json");
+	test_all_in(JSON, false, "../../test_suite/cfg_pass",       ".cfg");
+	test_all_in(JSON, false, "../../test_suite/cfg_fail",       ".cfg");
 
-	std::cout << std::endl << "CFG expected to pass:" << std::endl;
-	test_all_in(tester, CFG, true,  "../../test_suite/json_pass", ".json");
-	test_all_in(tester, CFG, true,  "../../test_suite/cfg_pass",  ".cfg");
+	// CFG expected to pass:
+	test_all_in(CFG,  true,  "../../test_suite/json_pass",      ".json");
+	test_all_in(CFG,  true,  "../../test_suite/cfg_pass",       ".cfg");
 
-	std::cout << std::endl << "CFG expected to fail:" << std::endl;
-	test_all_in(tester, CFG, false, "../../test_suite/json_only_pass", ".json");
-	test_all_in(tester, CFG, false, "../../test_suite/json_fail",      ".json");
-	test_all_in(tester, CFG, false, "../../test_suite/cfg_fail",       ".cfg");
-	std::cout << std::endl << std::endl;
+	// CFG expected to fail:
+	test_all_in(CFG,  false, "../../test_suite/json_only_pass", ".json");
+	test_all_in(CFG,  false, "../../test_suite/json_fail",      ".json");
+	test_all_in(CFG,  false, "../../test_suite/cfg_fail",       ".cfg");
 
-	test_special(tester);
-	test_bad_usage(tester);
-	test_strings(tester);
-	test_doubles(tester);
-	test_roundtrip_string(tester);
-
-	if (tester.num_failed == 0) {
-		printf("%s%lu/%lu tests passed!%s\n", loguru::terminal_green(), tester.num_run, tester.num_run, loguru::terminal_reset());
-	} else {
-		printf("%s%lu/%lu tests failed.%s\n", loguru::terminal_red(), tester.num_failed, tester.num_run, loguru::terminal_reset());
-	}
-	printf("\n\n");
-	fflush(stdout);
+	test_special();
+	test_bad_usage();
+	test_strings();
+	test_doubles();
+	test_roundtrip_string();
 }
 
 static const char* TEST_CFG = R"(
@@ -413,10 +352,12 @@ obj:   {
 
 void parse_and_print()
 {
-	LOG_SCOPE_FUNCTION(0);
+	std::cout << "----- parse_and_print ---------------------------------------" << std::endl;
 	auto cfg = parse_string(TEST_CFG, CFG, "test_cfg");
 	std::cout << "pi: " << cfg["pi"] << std::endl;
-	cfg.check_dangling();
+	cfg.visit_dangling([](const std::string& key, const Config& value){
+		std::cout << value.where() << "Key '" << key << "' never accessed" << std::endl;
+	});
 
 	std::cout << std::endl;
 	std::cout << "// CFG:" << std::endl;
@@ -444,11 +385,11 @@ void parse_and_print()
 	std::cout << dump_string(cfg, format);
 
 	std::cout << std::endl;
+	std::cout << "-------------------------------------------------------------" << std::endl;
 }
 
 void create()
 {
-	LOG_SCOPE_FUNCTION(0);
 	/*
 	Based on https://github.com/nlohmann/json#examples
 
@@ -514,13 +455,12 @@ void create()
 		} }
 	};
 
-	std::cout << "cfg:\n"  << cfg  << std::endl;
-	std::cout << "cfg2:\n" << cfg2 << std::endl;
+	// std::cout << "cfg:\n"  << cfg  << std::endl;
+	// std::cout << "cfg2:\n" << cfg2 << std::endl;
 }
 
 void test_iteration()
 {
-	LOG_SCOPE_FUNCTION(0);
 	const char* TEST_CFG_2 = R"(
 	{
 		"value":  3.14,
@@ -533,7 +473,21 @@ void test_iteration()
 
 	{
 		const auto const_cfg = parse_string(TEST_CFG_2, JSON, "test_cfg_2");
-		const_cfg.check_dangling(); // Should warn about "value", "array" and "object"
+
+		{
+			bool did_throw = false;
+			try {
+				const_cfg.check_dangling();
+			} catch (std::exception& e) {
+				// Should warn about "value", "array" and "object"
+				std::string msg = e.what();
+				TEST(msg.find("'value'") != std::string::npos);
+				TEST(msg.find("'array'") != std::string::npos);
+				TEST(msg.find("'object'") != std::string::npos);
+				did_throw = true;
+			}
+			TEST(did_throw);
+		}
 
 		std::cout << "object contents: " << std::endl;
 		for (const auto& p : const_cfg.as_object())
@@ -541,7 +495,19 @@ void test_iteration()
 			std::cout << p.key() << ": " << p.value() << std::endl;
 		}
 
-		const_cfg.check_dangling(); // Should warn about "key_0" and "key_1"
+		{
+			bool did_throw = false;
+			try {
+				const_cfg.check_dangling(); // Should warn about "key_0" and "key_1"
+			} catch (std::exception& e) {
+				// Should warn about "value", "array" and "object"
+				std::string msg = e.what();
+				TEST(msg.find("'key_0'") != std::string::npos);
+				TEST(msg.find("'key_1'") != std::string::npos);
+				did_throw = true;
+			}
+			TEST(did_throw);
+		}
 	}
 
 	{
@@ -551,15 +517,14 @@ void test_iteration()
 			p.value() = p.key();
 		}
 		mut_cfg.check_dangling(); // Shouldn't warn.
-		CHECK_F(mut_cfg["value"]  == "value");
-		CHECK_F(mut_cfg["array"]  == "array");
-		CHECK_F(mut_cfg["object"] == "object");
+		TEST(mut_cfg["value"]  == "value");
+		TEST(mut_cfg["array"]  == "array");
+		TEST(mut_cfg["object"] == "object");
 	}
 }
 
 void test_comments()
 {
-	LOG_SCOPE_FUNCTION(0);
 	auto in_path  = "../../test_suite/comments_in.cfg";
 	auto out_path = "../../test_suite/comments_out.cfg";
 	auto out_2_path = "../../test_suite/comments_out_2.cfg";
@@ -582,8 +547,6 @@ void test_comments()
 
 void test_conversions()
 {
-	LOG_SCOPE_FUNCTION(0);
-
 	Config cfg = {
 		{ "bool",        true     },
 		{ "int",         42       },
@@ -594,35 +557,35 @@ void test_conversions()
 	};
 
 	auto explicit_bool = (bool)cfg["bool"];
-	CHECK_EQ_F(explicit_bool, true);
+	TEST_EQ(explicit_bool, true);
 	auto explicit_int = (int)cfg["int"];
-	CHECK_EQ_F(explicit_int, 42);
+	TEST_EQ(explicit_int, 42);
 	auto explicit_float = (float)cfg["float"];
-	CHECK_EQ_F(explicit_float, 2.75f);
+	TEST_EQ(explicit_float, 2.75f);
 	auto explicit_double = (double)cfg["double"];
-	CHECK_EQ_F(explicit_double, 3.14);
+	TEST_EQ(explicit_double, 3.14);
 	auto explicit_string = (std::string)cfg["string"];
-	CHECK_EQ_F(explicit_string, "Hello!");
+	TEST_EQ(explicit_string, "Hello!");
 	auto explicit_mixed_array = (std::vector<Config>)cfg["mixed_array"];
-	CHECK_F(explicit_mixed_array[0] == nullptr);
-	CHECK_F(explicit_mixed_array[1] == 1);
-	CHECK_F(explicit_mixed_array[2] == "two");
+	TEST(explicit_mixed_array[0] == nullptr);
+	TEST(explicit_mixed_array[1] == 1);
+	TEST(explicit_mixed_array[2] == "two");
 
 #if CONFIGURU_IMPLICIT_CONVERSIONS
 	bool implicit_bool; implicit_bool = cfg["bool"];
-	CHECK_EQ_F(implicit_bool, true);
+	TEST_EQ(implicit_bool, true);
 	int implicit_int; implicit_int = cfg["int"];
-	CHECK_EQ_F(implicit_int, 42);
+	TEST_EQ(implicit_int, 42);
 	float implicit_float; implicit_float = cfg["float"];
-	CHECK_EQ_F(implicit_float, 2.75f);
+	TEST_EQ(implicit_float, 2.75f);
 	double implicit_double; implicit_double = cfg["double"];
-	CHECK_EQ_F(implicit_double, 3.14);
+	TEST_EQ(implicit_double, 3.14);
 	std::string implicit_string; implicit_string = cfg["string"];
-	CHECK_EQ_F(implicit_string, "Hello!");
+	TEST_EQ(implicit_string, "Hello!");
 	std::vector<Config> implicit_mixed_array; implicit_mixed_array = cfg["mixed_array"];
-	CHECK_F(implicit_mixed_array[0] == nullptr);
-	CHECK_F(implicit_mixed_array[1] == 1);
-	CHECK_F(implicit_mixed_array[2] == "two");
+	TEST(implicit_mixed_array[0] == nullptr);
+	TEST(implicit_mixed_array[1] == 1);
+	TEST(implicit_mixed_array[2] == "two");
 #endif
 
 	auto parse_json = [](const std::string& json) {
@@ -630,39 +593,38 @@ void test_conversions()
 	};
 
 	auto strings = (std::vector<std::string>)parse_json(R"(["hello", "you"])");
-	CHECK_EQ_F(strings.size(), 2u);
-	CHECK_EQ_F(strings[0], "hello");
-	CHECK_EQ_F(strings[1], "you");
+	TEST_EQ(strings.size(), 2u);
+	TEST_EQ(strings[0], "hello");
+	TEST_EQ(strings[1], "you");
 
 	auto ints = (std::vector<int>)parse_json(R"([0,1,2])");
-	CHECK_EQ_F(ints.size(), 3u);
-	CHECK_EQ_F(ints[0], 0);
-	CHECK_EQ_F(ints[1], 1);
-	CHECK_EQ_F(ints[2], 2);
+	TEST_EQ(ints.size(), 3u);
+	TEST_EQ(ints[0], 0);
+	TEST_EQ(ints[1], 1);
+	TEST_EQ(ints[2], 2);
 
 	auto pairs = (std::vector<std::pair<std::string, float>>)parse_json(R"([["1", 2.2], ["3", 4.4]])");
-	CHECK_EQ_F(pairs.size(), 2u);
-	CHECK_EQ_F(pairs[0].first, "1");
-	CHECK_EQ_F(pairs[0].second, 2.2f);
-	CHECK_EQ_F(pairs[1].first, "3");
-	CHECK_EQ_F(pairs[1].second, 4.4f);
+	TEST_EQ(pairs.size(), 2u);
+	TEST_EQ(pairs[0].first, "1");
+	TEST_EQ(pairs[0].second, 2.2f);
+	TEST_EQ(pairs[1].first, "3");
+	TEST_EQ(pairs[1].second, 4.4f);
 }
 
 void test_copy_semantics()
 {
-    LOG_F(INFO, "test_copy_semantics...");
     Config original{
         { "key", "original_value" }
     };
-    CHECK_F(original["key"] == "original_value");
+    TEST(original["key"] == "original_value");
     Config copy = original;
-    CHECK_F(copy["key"] == "original_value");
+    TEST(copy["key"] == "original_value");
     copy["key"] = "new_value";
-    CHECK_F(copy["key"] == "new_value");
+    TEST(copy["key"] == "new_value");
 #if CONFIGURU_VALUE_SEMANTICS
-    CHECK_F(original["key"] == "original_value");
+    TEST(original["key"] == "original_value");
 #else
-    CHECK_F(original["key"] == "new_value");
+    TEST(original["key"] == "new_value");
 #endif
 }
 
@@ -671,16 +633,15 @@ void test_swap()
     Config a{{ "message", "hello" }};
     Config b{{ "salute", "goodbye" }};
     a.swap(b);
-    CHECK_F(b["message"] == "hello");
-    CHECK_F(a["salute"] == "goodbye");
+    TEST(b["message"] == "hello");
+    TEST(a["salute"] == "goodbye");
     std::swap(a, b);
-    CHECK_F(a["message"] == "hello");
-    CHECK_F(b["salute"] == "goodbye");
+    TEST(a["message"] == "hello");
+    TEST(b["salute"] == "goodbye");
 }
 
 void test_get_or()
 {
-    LOG_F(INFO, "test_get_or...");
 	const Config cfg = parse_string(R"({
 	"a": {
 		"b": {
@@ -691,22 +652,14 @@ void test_get_or()
 	}
 })", JSON, "test_get_or");
 
-	CHECK_EQ_F(cfg.get_or({"a", "b", "c", "key"}, 0), 42);
-	// CHECK_EQ_F(cfg.get_or({"a", "x", "c", "key"}, 0), 42); // Should throw
-	CHECK_EQ_F(cfg.get_or({"a", "x", "c", "key"}, 3.14), 3.14);
-	CHECK_EQ_F(cfg.get_or({"a", "b", "c", "not_key"}, "hello"), "hello");
+	TEST_EQ(cfg.get_or({"a", "b", "c", "key"}, 0), 42);
+	// TEST_EQ(cfg.get_or({"a", "x", "c", "key"}, 0), 42); // Should throw
+	TEST_EQ(cfg.get_or({"a", "x", "c", "key"}, 3.14), 3.14);
+	TEST_EQ(cfg.get_or({"a", "b", "c", "not_key"}, "hello"), "hello");
 }
 
-int main(int argc, char* argv[])
+void configuru_vs_nlohmann()
 {
-	loguru::init(argc, argv);
-
-	parse_and_print();
-	create();
-	test_iteration();
-	test_comments();
-	test_conversions();
-
 	nlohmann::json nlohmann_json {
 		{"float",       3.14f},
 		{"double",      3.14},
@@ -729,12 +682,27 @@ int main(int argc, char* argv[])
 		})},
 	};
 
+	std::cout << "---- configuru_vs_nlohmann ----------------------------------" << std::endl;
 	std::cout << "nlohmann: \n"       << nlohmann::json(nlohmann_json).dump(4) << std::endl;
 	std::cout << "configuru JSON: \n" << dump_string(configuru_cfg, JSON) << std::endl;
 	std::cout << "configuru CFG: \n"  << dump_string(configuru_cfg, CFG)  << std::endl;
+	std::cout << "-------------------------------------------------------------" << std::endl;
+}
 
+int main()
+{
+	parse_and_print();
+	create();
+	test_iteration();
+	test_comments();
+	test_conversions();
 	run_unit_tests();
     test_copy_semantics();
     test_swap();
     test_get_or();
+    configuru_vs_nlohmann();
+
+    // ------------------------------------------------------------------------
+
+    s_tester.print_results();
 }
