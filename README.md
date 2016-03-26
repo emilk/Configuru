@@ -271,7 +271,6 @@ The default behavior of Configuru is to throw an `std::runtime_error` on any err
 
 CFG format
 ===============================================================================
-
 In addition to JSON, Configuru also has native support for a format I simply call *CFG*. CFG is a superset of JSON with some simplifications and extensions. Example file:
 
 	values: [1 2 3 4 5 6]
@@ -294,7 +293,7 @@ In addition to JSON, Configuru also has native support for a format I simply cal
 Numbers can be represented in any common form:
 `-42`, `1e-32`, `0xCAFE`, `0b1010`
 
-`+inf`, `-inf`, `+NaN` are valid numbers
+`+inf`, `-inf`, `+NaN` are valid numbers.
 
 Indentation is enforced, and must be done with tabs. Tabs anywhere else is not allowed.
 
@@ -369,5 +368,4 @@ Note how Configuru refrains from unnecessary line breaks on short arrays and doe
 
 TODO
 ===============================================================================
-* Allow user to customize how `check_dangling` report errors. I suggest an overload where you can send in an `std::function<void(const std::string& where, const std::string& key)>` to be called on each error, as well as the current `CONFIGURU_ON_DANGLING` as a default.
 * Test on another compiler than Clang and GCC.

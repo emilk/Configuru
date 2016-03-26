@@ -1,3 +1,6 @@
+#pragma once
+
+#include <functional>
 #include <iostream>
 #include <string>
 
@@ -55,7 +58,7 @@ private:
 
 static Tester s_tester;
 
-void test_code(std::string test_name, bool should_pass, std::function<void()> code)
+inline void test_code(const std::string& test_name, bool should_pass, std::function<void()> code)
 {
 	try {
 		code();
@@ -74,5 +77,29 @@ void test_code(std::string test_name, bool should_pass, std::function<void()> co
 	}
 }
 
-#define TEST(expr) if (expr) { s_tester.print_pass(#expr); } else { s_tester.print_fail(#expr); }
+#define TEST_PASS(message) s_tester.print_pass(message)
+#define TEST_FAIL(message) s_tester.print_fail(message)
+#define TEST_FAIL2(message, extra) s_tester.print_fail(message, extra)
+
+#define TEST(expr)                             \
+	do {                                       \
+		if (expr) {                            \
+			s_tester.print_pass(#expr);        \
+		} else {                               \
+			s_tester.print_fail(#expr);        \
+		}                                      \
+	} while (0)
+
 #define TEST_EQ(a, b) TEST((a) == (b))
+
+#define TEST_NOTHROW(expr)                     \
+	do {                                       \
+		try {                                  \
+			expr;                              \
+			TEST_PASS(#expr);                  \
+		} catch (std::exception& e) {          \
+			TEST_FAIL2(#expr, e.what());       \
+		} catch (...) {                        \
+			TEST_FAIL(#expr);                  \
+		}                                      \
+	} while (0)

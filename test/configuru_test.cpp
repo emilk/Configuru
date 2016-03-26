@@ -3,7 +3,8 @@
 #define LOGURU_IMPLEMENTATION 1
 #include <loguru.hpp>
 
-#define CONFIGURU_ASSERT(test) TEST(test)
+// #define CONFIGURU_ASSERT(test) TEST(test)
+#define CONFIGURU_ASSERT(test) CHECK_F(test)
 
 #define CONFIGURU_IMPLICIT_CONVERSIONS 0
 #define CONFIGURU_VALUE_SEMANTICS 1
@@ -131,23 +132,26 @@ void test_roundtrip_string()
 	test_roundtrip("3.14");
 }
 
+void test_string(const std::string& json, const char* str, size_t len = 0)
+{
+	if (len == 0) { len = strlen(str); }
+	std::string expected(str, str + len);
+	std::string output = parse_string(json.c_str(), JSON, "string").as_string();
+	if (output == expected) {
+		s_tester.print_pass(expected);
+	} else {
+		s_tester.print_fail(json, "Got: '" + output + ", expected: '" + expected + "'");
+	}
+}
+
+
 void test_strings()
 {
-	auto test_string = [&](const std::string& json, const std::string& expected)
-	{
-		std::string output = parse_string(json.c_str(), JSON, "string").as_string();
-		if (output == expected) {
-			s_tester.print_pass(expected);
-		} else {
-			s_tester.print_fail(json, "Got: '" + output + ", expected: '" + expected + "'");
-		}
-	};
-
 	// Tests from https://github.com/miloyip/nativejson-benchmark
     test_string("\"\"",                         "");
     test_string("\"Hello\"",                    "Hello");
     test_string("\"Hello\\nWorld\"",            "Hello\nWorld");
-    // test_string("\"Hello\\u0000World\"",        "Hello\0World");
+    test_string("\"Hello\\u0000World\"",        "Hello\0World", 11);
     test_string("\"\\\"\\\\/\\b\\f\\n\\r\\t\"", "\"\\/\b\f\n\r\t");
     test_string("\"\\u0024\"",                  "\x24");             // Dollar sign U+0024
     test_string("\"\\u00A2\"",                  "\xC2\xA2");         // Cents sign U+00A2
@@ -200,11 +204,11 @@ void test_doubles()
     test_double("123e34", 123e34);                                  // Fast Path Cases In Disguise
     test_double("45913141877270640000.0", 45913141877270640000.0);
     test_double("2.2250738585072011e-308", 2.2250738585072011e-308); // http://www.exploringbinary.com/php-hangs-on-numeric-value-2-2250738585072011e-308/
-    //test_double("1e-00011111111111", 0.0);
-    //test_double("-1e-00011111111111", -0.0);
+    test_double("1e-00011111111111", 0.0);
+    test_double("-1e-00011111111111", -0.0);
     test_double("1e-214748363", 0.0);
     test_double("1e-214748364", 0.0);
-    //test_double("1e-21474836311", 0.0);
+    test_double("1e-21474836311", 0.0);
     test_double("0.017976931348623157e+310", 1.7976931348623157e+308); // Max double in another form
 
     // Since
@@ -474,19 +478,16 @@ void test_iteration()
 	{
 		const auto const_cfg = parse_string(TEST_CFG_2, JSON, "test_cfg_2");
 
-		{
-			bool did_throw = false;
-			try {
-				const_cfg.check_dangling();
-			} catch (std::exception& e) {
-				// Should warn about "value", "array" and "object"
-				std::string msg = e.what();
-				TEST(msg.find("'value'") != std::string::npos);
-				TEST(msg.find("'array'") != std::string::npos);
-				TEST(msg.find("'object'") != std::string::npos);
-				did_throw = true;
-			}
-			TEST(did_throw);
+		try {
+			const_cfg.check_dangling();
+			TEST_FAIL("Should have thrown");
+		} catch (std::exception& e) {
+			std::string msg = e.what();
+			TEST(msg.find("'value'")  != std::string::npos);
+			TEST(msg.find("'array'")  != std::string::npos);
+			TEST(msg.find("'object'") != std::string::npos);
+			TEST(msg.find("'key_0'")  == std::string::npos);
+			TEST(msg.find("'key_1'")  == std::string::npos);
 		}
 
 		std::cout << "object contents: " << std::endl;
@@ -495,18 +496,16 @@ void test_iteration()
 			std::cout << p.key() << ": " << p.value() << std::endl;
 		}
 
-		{
-			bool did_throw = false;
-			try {
-				const_cfg.check_dangling(); // Should warn about "key_0" and "key_1"
-			} catch (std::exception& e) {
-				// Should warn about "value", "array" and "object"
-				std::string msg = e.what();
-				TEST(msg.find("'key_0'") != std::string::npos);
-				TEST(msg.find("'key_1'") != std::string::npos);
-				did_throw = true;
-			}
-			TEST(did_throw);
+		try {
+			const_cfg.check_dangling();
+			TEST_FAIL("Should have thrown");
+		} catch (std::exception& e) {
+			std::string msg = e.what();
+			TEST(msg.find("'value'")  == std::string::npos);
+			TEST(msg.find("'array'")  == std::string::npos);
+			TEST(msg.find("'object'") == std::string::npos);
+			TEST(msg.find("'key_0'")  != std::string::npos);
+			TEST(msg.find("'key_1'")  != std::string::npos);
 		}
 	}
 
@@ -516,7 +515,7 @@ void test_iteration()
 		{
 			p.value() = p.key();
 		}
-		mut_cfg.check_dangling(); // Shouldn't warn.
+		TEST_NOTHROW(mut_cfg.check_dangling());
 		TEST(mut_cfg["value"]  == "value");
 		TEST(mut_cfg["array"]  == "array");
 		TEST(mut_cfg["object"] == "object");
@@ -567,9 +566,9 @@ void test_conversions()
 	auto explicit_string = (std::string)cfg["string"];
 	TEST_EQ(explicit_string, "Hello!");
 	auto explicit_mixed_array = (std::vector<Config>)cfg["mixed_array"];
-	TEST(explicit_mixed_array[0] == nullptr);
-	TEST(explicit_mixed_array[1] == 1);
-	TEST(explicit_mixed_array[2] == "two");
+	TEST_EQ(explicit_mixed_array[0], nullptr);
+	TEST_EQ(explicit_mixed_array[1], 1);
+	TEST_EQ(explicit_mixed_array[2], "two");
 
 #if CONFIGURU_IMPLICIT_CONVERSIONS
 	bool implicit_bool; implicit_bool = cfg["bool"];
@@ -583,9 +582,9 @@ void test_conversions()
 	std::string implicit_string; implicit_string = cfg["string"];
 	TEST_EQ(implicit_string, "Hello!");
 	std::vector<Config> implicit_mixed_array; implicit_mixed_array = cfg["mixed_array"];
-	TEST(implicit_mixed_array[0] == nullptr);
-	TEST(implicit_mixed_array[1] == 1);
-	TEST(implicit_mixed_array[2] == "two");
+	TEST_EQ(implicit_mixed_array[0], nullptr);
+	TEST_EQ(implicit_mixed_array[1], 1);
+	TEST_EQ(implicit_mixed_array[2], "two");
 #endif
 
 	auto parse_json = [](const std::string& json) {
@@ -616,15 +615,15 @@ void test_copy_semantics()
     Config original{
         { "key", "original_value" }
     };
-    TEST(original["key"] == "original_value");
+    TEST_EQ(original["key"], "original_value");
     Config copy = original;
-    TEST(copy["key"] == "original_value");
+    TEST_EQ(copy["key"], "original_value");
     copy["key"] = "new_value";
-    TEST(copy["key"] == "new_value");
+    TEST_EQ(copy["key"], "new_value");
 #if CONFIGURU_VALUE_SEMANTICS
-    TEST(original["key"] == "original_value");
+    TEST_EQ(original["key"], "original_value");
 #else
-    TEST(original["key"] == "new_value");
+    TEST_EQ(original["key"], "new_value");
 #endif
 }
 
@@ -633,11 +632,11 @@ void test_swap()
     Config a{{ "message", "hello" }};
     Config b{{ "salute", "goodbye" }};
     a.swap(b);
-    TEST(b["message"] == "hello");
-    TEST(a["salute"] == "goodbye");
+    TEST_EQ(b["message"], "hello");
+    TEST_EQ(a["salute"], "goodbye");
     std::swap(a, b);
-    TEST(a["message"] == "hello");
-    TEST(b["salute"] == "goodbye");
+    TEST_EQ(a["message"], "hello");
+    TEST_EQ(b["salute"], "goodbye");
 }
 
 void test_get_or()
@@ -653,9 +652,14 @@ void test_get_or()
 })", JSON, "test_get_or");
 
 	TEST_EQ(cfg.get_or({"a", "b", "c", "key"}, 0), 42);
-	// TEST_EQ(cfg.get_or({"a", "x", "c", "key"}, 0), 42); // Should throw
 	TEST_EQ(cfg.get_or({"a", "x", "c", "key"}, 3.14), 3.14);
 	TEST_EQ(cfg.get_or({"a", "b", "c", "not_key"}, "hello"), "hello");
+	try {
+		cfg.get_or({"a", "b", "c", "key", "not_ok"}, 0);
+		TEST_FAIL("Should have thrown");
+	} catch (std::exception& e) {
+		TEST_EQ(std::string(e.what()), std::string("test_get_or:5: Expected object, got integer"));
+	}
 }
 
 void configuru_vs_nlohmann()
@@ -692,6 +696,7 @@ void configuru_vs_nlohmann()
 int main()
 {
 	parse_and_print();
+    configuru_vs_nlohmann();
 	create();
 	test_iteration();
 	test_comments();
@@ -700,7 +705,6 @@ int main()
     test_copy_semantics();
     test_swap();
     test_get_or();
-    configuru_vs_nlohmann();
 
     // ------------------------------------------------------------------------
 
