@@ -1259,6 +1259,10 @@ namespace configuru
 			_comments.reset(new ConfigComments(*o._comments));
 		}
 
+		#if CONFIGURU_VALUE_SEMANTICS
+			o.mark_accessed(true);
+		#endif
+
 		return *this;
 	}
 

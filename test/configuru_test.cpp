@@ -499,6 +499,15 @@ void test_check_dangling()
         const_cfg.mark_accessed(false);
         TEST_THROW(const_cfg.check_dangling(), std::exception);
 
+        #if CONFIGURU_VALUE_SEMANTICS
+            const_cfg.mark_accessed(false);
+            TEST_THROW(const_cfg.check_dangling(), std::exception);
+            const auto copy = const_cfg;
+            TEST_NOTHROW(const_cfg.check_dangling());
+            TEST_THROW(copy.check_dangling(), std::exception);
+        #endif
+
+        const_cfg.mark_accessed(false);
         dump_string(const_cfg, JSON);
         TEST_NOTHROW(const_cfg.check_dangling());
 
