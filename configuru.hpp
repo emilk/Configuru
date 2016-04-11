@@ -15,7 +15,8 @@ www.github.com/emilk/configuru
 # Version history
 	0.00: 2014-07-21 - Initial steps
 	0.10: 2015-11-08 - First commit as stand-alone library
-	0.20: 2016-03-25 - check_dangling changes.
+	0.20: 2016-03-25 - check_dangling changes
+	0.21: 2016-04-11 - mark_accessed in dump_string by default
 
 # Getting started
 	For using:
@@ -908,6 +909,9 @@ namespace configuru
 		// When printing, write uninitialized values as UNINITIALIZED. Useful for debugging.
 		bool        write_uninitialized      = false;
 
+		// Dumping should mark the json as accessed?
+		bool        mark_accessed            = true;
+
 		bool compact() const { return indentation.empty(); }
 	};
 
@@ -1546,6 +1550,7 @@ namespace configuru
 		format.nan                 = true;
 		format.write_uninitialized = true;
 		format.end_with_newline    = false;
+		format.mark_accessed       = false;
 		return os << dump_string(cfg, format);
 	}
 }
@@ -1813,13 +1818,13 @@ namespace configuru
 
 	private:
 		FormatOptions _options;
-		DocInfo_SP   _doc;
-		ParseInfo&   _info;
+		DocInfo_SP    _doc;
+		ParseInfo&    _info;
 
-		const char*  _ptr;
-		unsigned     _line_nr;
-		const char*  _line_start;
-		int          _indentation = 0; // Expected number of tabs between a \n and the next key/value
+		const char*   _ptr;
+		unsigned      _line_nr;
+		const char*   _line_start;
+		int           _indentation = 0; // Expected number of tabs between a \n and the next key/value
 	};
 
 	// --------------------------------------------
@@ -3137,6 +3142,10 @@ namespace configuru
 			}
 		}
 
+		if (options.mark_accessed)
+		{
+			config.mark_accessed(true);
+		}
 		return std::move(w._out);
 	}
 

@@ -490,6 +490,21 @@ void test_check_dangling()
 			TEST(msg.find("'key_1'")  == std::string::npos);
 		}
 
+        std::stringstream ss;
+        ss << const_cfg;
+        TEST_THROW(const_cfg.check_dangling(), std::exception);
+
+        const_cfg.mark_accessed(true);
+        TEST_NOTHROW(const_cfg.check_dangling());
+        const_cfg.mark_accessed(false);
+        TEST_THROW(const_cfg.check_dangling(), std::exception);
+
+        dump_string(const_cfg, JSON);
+        TEST_NOTHROW(const_cfg.check_dangling());
+
+        const_cfg.mark_accessed(false);
+        TEST_THROW(const_cfg.check_dangling(), std::exception);
+
 		std::cout << "object contents: " << std::endl;
 		for (const auto& p : const_cfg.as_object())
 		{
