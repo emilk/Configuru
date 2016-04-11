@@ -17,17 +17,19 @@ MESSAGE(STATUS "CMAKE_CXX_COMPILER_ID: ${CMAKE_CXX_COMPILER_ID}")
 
 add_compile_options(-std=c++11 -Werror -Wall -Wextra)
 
-add_compile_options(
-    -Weverything
-    -Wno-c++98-compat
-    -Wno-c++98-compat-pedantic
-    -Wno-exit-time-destructors             # configuru_test.cpp
-    -Wno-float-equal                       # configuru_test.cpp
-    -Wno-global-constructors               # configuru_test.cpp
-    -Wno-gnu-zero-variadic-macro-arguments # configuru_test.cpp vs Loguru
-    -Wno-missing-prototypes                # configuru_test.cpp
-    -Wno-old-style-cast                    # configuru_test.cpp
-)
+if ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
+    add_compile_options(
+        -Weverything
+        -Wno-c++98-compat
+        -Wno-c++98-compat-pedantic
+        -Wno-exit-time-destructors             # configuru_test.cpp
+        -Wno-float-equal                       # configuru_test.cpp
+        -Wno-global-constructors               # configuru_test.cpp
+        -Wno-gnu-zero-variadic-macro-arguments # configuru_test.cpp vs Loguru
+        -Wno-missing-prototypes                # configuru_test.cpp
+        -Wno-old-style-cast                    # configuru_test.cpp
+    )
+endif() # Clang
 
 file(GLOB source
     "${CMAKE_CURRENT_SOURCE_DIR}/*.cpp"
