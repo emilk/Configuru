@@ -33,6 +33,7 @@ Website: www.ilikebigbits.com
 	* Verison 1.13 - 2015-02-29 - ERROR_CONTEXT as linked list
 	* Verison 1.20 - 2015-03-19 - Add get_thread_name()
 	* Verison 1.21 - 2015-03-20 - Minor fixes
+	* Verison 1.22 - 2015-03-29 - Fix issues with set_fatal_handler throwing an exception
 
 # Compiling
 	Just include <loguru.hpp> where you want to use Loguru.
@@ -84,8 +85,8 @@ Website: www.ilikebigbits.com
 
 	// Throw exceptions instead of aborting on CHECK fails:
 	loguru::set_fatal_handler([](const loguru::Message& message){
-		throw std::runtime_error(message.message);
-	})
+		throw std::runtime_error(std::string(message.prefix) + message.message);
+	});
 
 	If you prefer logging with streams:
 
@@ -159,6 +160,11 @@ Website: www.ilikebigbits.com
 #endif
 
 #if LOGURU_REPLACE_GLOG
+	#undef LOGURU_WITH_STREAMS
+	#define LOGURU_WITH_STREAMS 1
+#endif
+
+#if LOGURU_IMPLEMENTATION
 	#undef LOGURU_WITH_STREAMS
 	#define LOGURU_WITH_STREAMS 1
 #endif
@@ -838,28 +844,58 @@ namespace loguru
 	// Like vsprintf, but returns the formated text.
 	std::string vstrprintf(LOGURU_FORMAT_STRING_TYPE format, va_list) LOGURU_PRINTF_LIKE(1, 0);
 
-	class StreamLogger : public std::ostringstream
+	class StreamLogger
 	{
 	public:
 		StreamLogger(Verbosity verbosity, const char* file, unsigned line) : _verbosity(verbosity), _file(file), _line(line) {}
-		~StreamLogger();
+		~StreamLogger() noexcept(false);
+
+		template<typename T>
+		StreamLogger& operator<<(const T& t)
+		{
+			_ss << t;
+			return *this;
+		}
+
+		// std::endl and other iomanip:s.
+		StreamLogger& operator<<(std::ostream&(*f)(std::ostream&))
+		{
+			f(_ss);
+			return *this;
+		}
 
 	private:
 		Verbosity   _verbosity;
 		const char* _file;
 		unsigned    _line;
+		std::ostringstream _ss;
 	};
 
-	class AbortLogger : public std::ostringstream
+	class AbortLogger
 	{
 	public:
-		AbortLogger(const char* expr, const char* file, unsigned line) : _expr(expr), _file(file), _line(line) {}
-		LOGURU_NORETURN ~AbortLogger();
+		AbortLogger(const char* expr, const char* file, unsigned line) : _expr(expr), _file(file), _line(line) { }
+		LOGURU_NORETURN ~AbortLogger() noexcept(false);
+
+		template<typename T>
+		AbortLogger& operator<<(const T& t)
+		{
+			_ss << t;
+			return *this;
+		}
+
+		// std::endl and other iomanip:s.
+		AbortLogger& operator<<(std::ostream&(*f)(std::ostream&))
+		{
+			f(_ss);
+			return *this;
+		}
 
 	private:
-		const char* _expr;
-		const char* _file;
-		unsigned    _line;
+		const char*        _expr;
+		const char*        _file;
+		unsigned           _line;
+		std::ostringstream _ss;
 	};
 
 	class Voidify
@@ -867,7 +903,8 @@ namespace loguru
 	public:
 		Voidify() {}
 		// This has to be an operator with a precedence lower than << but higher than ?:
-		void operator&(const std::ostream&) {}
+		void operator&(const StreamLogger&) { }
+		void operator&(const AbortLogger&)  { }
 	};
 
 	/*  Helper functions for CHECK_OP_S macro.
@@ -1085,7 +1122,7 @@ This will define all the Loguru functions so that the linker may find them.
 #endif
 
 #ifdef __APPLE__
-    #include "TargetConditionals.h"
+	#include "TargetConditionals.h"
 #endif
 
 // TODO: use defined(_POSIX_VERSION) for some of these things?
@@ -1366,13 +1403,48 @@ namespace loguru
 
 	void install_signal_handlers();
 
+	void write_hex_digit(std::string& out, unsigned num)
+	{
+		DCHECK_LT_F(num, 16u);
+		if (num < 10u) { out.push_back(char('0' + num)); }
+		else { out.push_back(char('A' + num - 10)); }
+	}
+
+	void write_hex_byte(std::string& out, uint8_t n)
+	{
+		write_hex_digit(out, n >> 4u);
+		write_hex_digit(out, n & 0x0f);
+	}
+
+	void escape(std::string& out, const std::string& str)
+	{
+		for (char c : str) {
+			/**/ if (c == '\a') { out += "\\a";  }
+			else if (c == '\b') { out += "\\b";  }
+			else if (c == '\f') { out += "\\f";  }
+			else if (c == '\n') { out += "\\n";  }
+			else if (c == '\r') { out += "\\r";  }
+			else if (c == '\t') { out += "\\t";  }
+			else if (c == '\v') { out += "\\v";  }
+			else if (c == '\\') { out += "\\\\"; }
+			else if (c == '\'') { out += "\\\'"; }
+			else if (c == '\"') { out += "\\\""; }
+			else if (c == ' ')  { out += "\\ ";  }
+			else if (0 <= c && c < 0x20) { // ASCI control character:
+			// else if (c < 0x20 || c != (c & 127)) { // ASCII control character or UTF-8:
+				out += "\\x";
+				write_hex_byte(out, static_cast<uint8_t>(c));
+			} else { out += c; }
+		}
+	}
+
 	void init(int& argc, char* argv[])
 	{
 		s_argv0_filename = filename(argv[0]);
 
 		s_file_arguments = "";
 		for (int i = 0; i < argc; ++i) {
-			s_file_arguments += argv[i];
+			escape(s_file_arguments, argv[i]);
 			if (i + 1 < argc) {
 				s_file_arguments += " ";
 			}
@@ -2033,15 +2105,15 @@ namespace loguru
 
 	#if LOGURU_WITH_STREAMS
 
-	StreamLogger::~StreamLogger()
+	StreamLogger::~StreamLogger() noexcept(false)
 	{
-		auto message = this->str();
+		auto message = _ss.str();
 		log(_verbosity, _file, _line, "%s", message.c_str());
 	}
 
-	AbortLogger::~AbortLogger()
+	AbortLogger::~AbortLogger() noexcept(false)
 	{
-		auto message = this->str();
+		auto message = _ss.str();
 		loguru::log_and_abort(1, _expr, _file, _line, "%s", message.c_str());
 	}
 
@@ -2172,10 +2244,10 @@ namespace loguru
 
 		auto write_hex_16 = [&](uint16_t n)
 		{
-			write_hex_digit((n >> 12) & 0x0f);
-			write_hex_digit((n >>  8) & 0x0f);
-			write_hex_digit((n >>  4) & 0x0f);
-			write_hex_digit((n >>  0) & 0x0f);
+			write_hex_digit((n >> 12u) & 0x0f);
+			write_hex_digit((n >>  8u) & 0x0f);
+			write_hex_digit((n >>  4u) & 0x0f);
+			write_hex_digit((n >>  0u) & 0x0f);
 		};
 
 		if      (c == '\\') { str += "\\\\"; }
@@ -2313,7 +2385,12 @@ namespace loguru
 		char preamble_buff[128];
 		print_preamble(preamble_buff, sizeof(preamble_buff), Verbosity_FATAL, "", 0);
 		auto message = Message{Verbosity_FATAL, "", 0, preamble_buff, "", "Signal: ", signal_name};
-		log_message(1, message, false, false);
+		try {
+			log_message(1, message, false, false);
+		} catch (...) {
+			// This can happed due to s_fatal_handler.
+			write_to_stderr("Exception caught and ignored by Loguru signal handler.\n");
+		}
 		flush();
 
 		call_default_signal_handler(signal_number);

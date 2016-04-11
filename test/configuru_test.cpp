@@ -38,7 +38,7 @@ std::vector<fs::path> list_files(fs::path directory, std::string extension)
 
 void test_parse(FormatOptions options, bool should_pass, fs::path path)
 {
-	test_code(path.filename().string(), should_pass, [&](){
+	test_code(__FILE__, __LINE__, path.filename().string(), should_pass, [&](){
 		parse_file(path.string(), options);
 	});
 }
@@ -57,9 +57,9 @@ void test_roundtrip(FormatOptions options, T value)
 	auto parsed_config = parse_string(serialized.c_str(), options, "roundtrip");
 	T parsed_value = (T)parsed_config;
 	if (value == parsed_value) {
-		s_tester.print_pass(serialized);
+		TEST_PASS(serialized);
 	} else {
-		s_tester.print_fail("round-trip", serialized);
+		TEST_FAIL2("round-trip", serialized);
 	}
 }
 
@@ -71,9 +71,9 @@ void test_writer(FormatOptions options, std::string name, T value, const std::st
 		serialized.resize(serialized.size() - 1);
 	}
 	if (serialized == expected) {
-		s_tester.print_pass(name);
+		TEST_PASS(name);
 	} else {
-		s_tester.print_fail(name, "Expected: '" + expected + "', got: '" + serialized + "'");
+		TEST_FAIL2(name, "Expected: '" + expected + "', got: '" + serialized + "'");
 	}
 }
 
@@ -111,9 +111,9 @@ void test_roundtrip_string()
 			serialized.resize(serialized.size() - 1);
 		}
 		if (json == serialized) {
-			s_tester.print_pass(json);
+			TEST_PASS(json);
 		} else {
-			s_tester.print_fail("round-trip", "Expected: '" + json + "', got: '" + serialized + "'");
+			TEST_FAIL2("round-trip", "Expected: '" + json + "', got: '" + serialized + "'");
 		}
 	};
 
@@ -138,9 +138,9 @@ void test_string(const std::string& json, const char* str, size_t len = 0)
 	std::string expected(str, str + len);
 	std::string output = parse_string(json.c_str(), JSON, "string").as_string();
 	if (output == expected) {
-		s_tester.print_pass(expected);
+		TEST_PASS(expected);
 	} else {
-		s_tester.print_fail(json, "Got: '" + output + ", expected: '" + expected + "'");
+		TEST_FAIL2(json, "Got: '" + output + ", expected: '" + expected + "'");
 	}
 }
 
@@ -165,9 +165,9 @@ void test_doubles()
 	{
 		double output = (double)parse_string(json.c_str(), JSON, "string");
 		if (output == expected) {
-			s_tester.print_pass(json);
+			TEST_PASS(json);
 		} else {
-			s_tester.print_fail(json, std::to_string(output) + " != " + std::to_string(expected));
+			TEST_FAIL2(json, std::to_string(output) + " != " + std::to_string(expected));
 		}
 	};
 
@@ -284,35 +284,35 @@ void test_doubles()
 void test_bad_usage()
 {
 	auto config = parse_file("../../test_suite/special/config.json", JSON);
-	test_code("access_float_as_float", true, [&]{
+	test_code(__FILE__, __LINE__, "access_float_as_float", true, [&]{
 		auto b = (float)config["pi"];
 		(void)b;
 	});
-	test_code("access_float_bool", false, [&]{
+	test_code(__FILE__, __LINE__, "access_float_bool", false, [&]{
 		auto f = (bool)config["pi"];
 		(void)f;
 	});
-	test_code("key_not_found", false, [&]{
+	test_code(__FILE__, __LINE__, "key_not_found", false, [&]{
 		std::cout << (float)config["obj"]["does_not_exist"];
 	});
-	test_code("indexing_non_array", false, [&]{
+	test_code(__FILE__, __LINE__, "indexing_non_array", false, [&]{
 		std::cout << (float)config["pi"][5];
 	});
-	test_code("out_of_bounds", false, [&]{
+	test_code(__FILE__, __LINE__, "out_of_bounds", false, [&]{
 		std::cout << (float)config["array"][5];
 	});
 
-	test_code("assign_to_non_object", false, []{
+	test_code(__FILE__, __LINE__, "assign_to_non_object", false, []{
 		Config cfg;
 		cfg["hello"] = 42;
 	});
 
-	test_code("read_from_non_object", false, []{
+	test_code(__FILE__, __LINE__, "read_from_non_object", false, []{
 		const Config cfg;
 		std::cout << cfg["hello"];
 	});
 
-	test_code("assign_to_non_array", false, []{
+	test_code(__FILE__, __LINE__, "assign_to_non_array", false, []{
 		Config cfg;
 		cfg.push_back("hello");
 	});
@@ -463,7 +463,7 @@ void create()
 	// std::cout << "cfg2:\n" << cfg2 << std::endl;
 }
 
-void test_iteration()
+void test_check_dangling()
 {
 	const char* TEST_CFG_2 = R"(
 	{
@@ -698,7 +698,7 @@ int main()
 	parse_and_print();
     configuru_vs_nlohmann();
 	create();
-	test_iteration();
+	test_check_dangling();
 	test_comments();
 	test_conversions();
 	run_unit_tests();

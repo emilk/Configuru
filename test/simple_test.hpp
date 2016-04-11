@@ -4,6 +4,7 @@
 #include <iostream>
 #include <string>
 
+#define LOGURU_WITH_STREAMS 1
 #include <loguru.hpp>
 
 const std::string PASS_STRING = std::string(loguru::terminal_green()) + "PASS: " + loguru::terminal_reset();
@@ -12,32 +13,24 @@ const std::string FAIL_STRING = std::string(loguru::terminal_red())   + "FAIL: "
 class Tester
 {
 public:
-	void print_pass(const std::string& test_name)
+	void on_test(bool did_pass, const char* filename, unsigned line, const std::string& test_name, const std::string& extra = "")
 	{
-		// std::cout << PASS_STRING << test_name << std::endl;
-		(void)test_name;
-		_num_run += 1;
-	}
+		if (!did_pass)
+		{
+			std::cout << std::endl << filename << ":" << line << "  " << (did_pass ? PASS_STRING : FAIL_STRING) << test_name;
+			if (extra != "")
+			{
+				std::cout << ": " << extra;
+			}
+			std::cout << std::endl << std::endl;
+		}
 
-	void print_pass(const std::string& test_name, const std::string& extra)
-	{
-		// std::cout << PASS_STRING << test_name << ": " << extra << std::endl << std::endl;
-		(void)test_name; (void)extra;
 		_num_run += 1;
-	}
 
-	void print_fail(const std::string& test_name)
-	{
-		std::cout << FAIL_STRING << test_name << std::endl;
-		_num_run += 1;
-		_num_failed += 1;
-	}
-
-	void print_fail(const std::string& test_name, const std::string& extra)
-	{
-		std::cout << FAIL_STRING << test_name << ": " << extra << std::endl << std::endl;
-		_num_run += 1;
-		_num_failed += 1;
+		if (!did_pass)
+		{
+			_num_failed += 1;
+		}
 	}
 
 	void print_results()
@@ -58,35 +51,35 @@ private:
 
 static Tester s_tester;
 
-inline void test_code(const std::string& test_name, bool should_pass, std::function<void()> code)
+inline void test_code(const char* filename, unsigned line, const std::string& test_name, bool should_pass, std::function<void()> code)
 {
 	try {
 		code();
 
 		if (should_pass) {
-			s_tester.print_pass(test_name);
+			s_tester.on_test(true, filename, line, test_name);
 		} else {
-			s_tester.print_fail(test_name, "Should not have parsed");
+			s_tester.on_test(false, filename, line, test_name, "Should not have parsed");
 		}
 	} catch (std::exception& e) {
 		if (should_pass) {
-			s_tester.print_fail(test_name, e.what());
+			s_tester.on_test(false, filename, line, test_name, e.what());
 		} else {
-			s_tester.print_pass(test_name, e.what());
+			s_tester.on_test(true, filename, line, test_name, e.what());
 		}
 	}
 }
 
-#define TEST_PASS(message) s_tester.print_pass(message)
-#define TEST_FAIL(message) s_tester.print_fail(message)
-#define TEST_FAIL2(message, extra) s_tester.print_fail(message, extra)
+#define TEST_PASS(message) s_tester.on_test(true, __FILE__, __LINE__, message)
+#define TEST_FAIL(message) s_tester.on_test(false, __FILE__, __LINE__, message)
+#define TEST_FAIL2(message, extra) s_tester.on_test(false, __FILE__, __LINE__, message, extra)
 
 #define TEST(expr)                             \
 	do {                                       \
 		if (expr) {                            \
-			s_tester.print_pass(#expr);        \
+			s_tester.on_test(true, __FILE__, __LINE__, #expr);        \
 		} else {                               \
-			s_tester.print_fail(#expr);        \
+			s_tester.on_test(false, __FILE__, __LINE__, #expr);        \
 		}                                      \
 	} while (0)
 
@@ -96,10 +89,23 @@ inline void test_code(const std::string& test_name, bool should_pass, std::funct
 	do {                                       \
 		try {                                  \
 			expr;                              \
-			TEST_PASS(#expr);                  \
+			s_tester.on_test(true, __FILE__, __LINE__, #expr);                  \
 		} catch (std::exception& e) {          \
-			TEST_FAIL2(#expr, e.what());       \
+			s_tester.on_test(false, __FILE__, __LINE__, #expr, e.what());       \
 		} catch (...) {                        \
-			TEST_FAIL(#expr);                  \
+			s_tester.on_test(false, __FILE__, __LINE__, #expr);                  \
+		}                                      \
+	} while (0)
+
+
+#define TEST_THROW(expr, exception_type)       \
+	do {                                       \
+		try {                                  \
+			expr;                              \
+			s_tester.on_test(false, __FILE__, __LINE__, #expr);                  \
+		} catch (exception_type& e) {          \
+			s_tester.on_test(true, __FILE__, __LINE__, #expr, e.what());         \
+		} catch (...) {                        \
+			s_tester.on_test(false, __FILE__, __LINE__, #expr);                  \
 		}                                      \
 	} while (0)
