@@ -1820,10 +1820,10 @@ namespace configuru
 		}
 
 	private:
-		bool IDENT_STARTERS[256] = { 0 };
-		bool IDENT_CHARS[256]    = { 0 };
-		bool MAYBE_WHITE[256]    = { 0 };
-		bool SAFE_CHARACTERS[256];
+		bool IDENT_STARTERS[256]     = { 0 };
+		bool IDENT_CHARS[256]        = { 0 };
+		bool MAYBE_WHITE[256]        = { 0 };
+		bool SPECIAL_CHARACTERS[256] = { 0 };
 
 	private:
 		FormatOptions _options;
@@ -1844,23 +1844,6 @@ namespace configuru
 		for (char c=a; c<=b; ++c) {
 			lookup[static_cast<uint8_t>(c)] = true;
 		}
-	}
-
-	void init_safe_characters(bool safe_characters[256])
-	{
-		for (int i = 0; i < 256; ++i) {
-			safe_characters[i] = i >= 0x20;
-		}
-
-		safe_characters['\\'] = false;
-		safe_characters['\"'] = false;
-		//safe_characters['\''] = false;
-		safe_characters['\0'] = false;
-		safe_characters['\b'] = false;
-		safe_characters['\f'] = false;
-		safe_characters['\n'] = false;
-		safe_characters['\r'] = false;
-		safe_characters['\t'] = false;
 	}
 
 	Parser::Parser(const char* str, const FormatOptions& options, DocInfo_SP doc, ParseInfo& info) : _doc(doc), _info(info)
@@ -1885,7 +1868,11 @@ namespace configuru
 		MAYBE_WHITE[static_cast<uint8_t>(' ')]  = true;
 		MAYBE_WHITE[static_cast<uint8_t>('/')]  = true; // Maybe a comment
 
-		init_safe_characters(SAFE_CHARACTERS);
+		SPECIAL_CHARACTERS[static_cast<uint8_t>('\0')] = true;
+		SPECIAL_CHARACTERS[static_cast<uint8_t>('\\')] = true;
+		SPECIAL_CHARACTERS[static_cast<uint8_t>('\"')] = true;
+		SPECIAL_CHARACTERS[static_cast<uint8_t>('\n')] = true;
+		SPECIAL_CHARACTERS[static_cast<uint8_t>('\t')] = true;
 
 		CONFIGURU_ASSERT(_options.indentation != "" || !_options.enforce_indentation);
 	}
@@ -2157,9 +2144,10 @@ namespace configuru
 		}
 	}
 
-	void Parser::parse_array_contents(Config& array)
+	void Parser::parse_array_contents(Config& array_cfg)
 	{
-		array.make_array();
+		array_cfg.make_array();
+		auto& array_impl = array_cfg.as_array();
 
 		Comments next_prefix_comments;
 
@@ -2177,14 +2165,14 @@ namespace configuru
 					throw_indentation_error(_indentation - 1, line_indentation);
 				}
 				if (value.has_comments()) {
-					array.comments().pre_end_brace = value.comments().prefix;
+					array_cfg.comments().pre_end_brace = value.comments().prefix;
 				}
 				break;
 			}
 
 			if (!_ptr[0]) {
 				if (value.has_comments()) {
-					array.comments().pre_end_brace = value.comments().prefix;
+					array_cfg.comments().pre_end_brace = value.comments().prefix;
 				}
 				break;
 			}
@@ -2211,7 +2199,7 @@ namespace configuru
 				has_separator = true;
 			}
 
-			array.push_back(std::move(value));
+			array_impl.emplace_back(std::move(value));
 
 			bool is_last_element = !_ptr[0] || _ptr[0] == ']';
 
@@ -2521,11 +2509,15 @@ namespace configuru
 			std::string str;
 
 			for (;;) {
-				if (SAFE_CHARACTERS[static_cast<uint8_t>(_ptr[0])]) {
-					// Common-case optimization
-					str.push_back(_ptr[0]);
-					_ptr += 1;
-					continue;
+				// Handle larges swats of safe characters at once:
+				auto safe_end = _ptr;
+				while (!SPECIAL_CHARACTERS[static_cast<uint8_t>(*safe_end)]) {
+					++safe_end;
+				}
+
+				if (_ptr != safe_end) {
+					str.append(_ptr, safe_end - _ptr);
+					_ptr = safe_end;
 				}
 
 				if (_ptr[0] == 0) {
@@ -2788,8 +2780,20 @@ namespace configuru
 		Writer(const FormatOptions& options, DocInfo_SP doc)
 			: _options(options), _doc(std::move(doc))
 		{
-			init_safe_characters(SAFE_CHARACTERS);
 			_compact = _options.compact();
+
+			for (int i = 0; i < 256; ++i) {
+				SAFE_CHARACTERS[i] = i >= 0x20;
+			}
+
+			SAFE_CHARACTERS[static_cast<uint8_t>('\\')] = false;
+			SAFE_CHARACTERS[static_cast<uint8_t>('\"')] = false;
+			SAFE_CHARACTERS[static_cast<uint8_t>('\0')] = false;
+			SAFE_CHARACTERS[static_cast<uint8_t>('\b')] = false;
+			SAFE_CHARACTERS[static_cast<uint8_t>('\f')] = false;
+			SAFE_CHARACTERS[static_cast<uint8_t>('\n')] = false;
+			SAFE_CHARACTERS[static_cast<uint8_t>('\r')] = false;
+			SAFE_CHARACTERS[static_cast<uint8_t>('\t')] = false;
 		}
 
 		inline void write_indent(unsigned indent)
@@ -2944,11 +2948,15 @@ namespace configuru
 
 			using ObjIterator = Config::ConfigObjectImpl::const_iterator;
 			std::vector<ObjIterator> pairs;
+			pairs.reserve(object.size());
 
 			size_t longest_key = 0;
+
 			for (auto it=object.begin(); it!=object.end(); ++it) {
 				pairs.push_back(it);
-				longest_key = std::max(longest_key, it->first.size());
+				if (!_compact) {
+					longest_key = std::max(longest_key, it->first.size());
+				}
 			}
 
 			if (_options.sort_keys) {
@@ -3115,22 +3123,40 @@ namespace configuru
 			write_hex_16(c);
 		}
 
+		bool all_safe_characters(const std::string& str)
+		{
+			for (char c : str) {
+				if (!SAFE_CHARACTERS[static_cast<uint8_t>(c)]) {
+					return false;
+				}
+			}
+			return true;
+		}
+
 		void write_quoted_string(const std::string& str)
 		{
 			_out.push_back('"');
-			for (char c : str) {
-				if (SAFE_CHARACTERS[static_cast<uint8_t>(c)]) { _out.push_back(c); }
-				else if (c == '\\') { _out += "\\\\"; }
-				else if (c == '\"') { _out += "\\\""; }
-				//else if (c == '\'') { _out += "\\\'"; }
-				else if (c == '\0') { _out += "\\0";  }
-				else if (c == '\b') { _out += "\\b";  }
-				else if (c == '\f') { _out += "\\f";  }
-				else if (c == '\n') { _out += "\\n";  }
-				else if (c == '\r') { _out += "\\r";  }
-				else if (c == '\t') { _out += "\\t";  }
-				else /*if (0 <= c && c < 0x20)*/ { write_unicode_16(static_cast<uint16_t>(c)); }
+
+			if (all_safe_characters(str)) {
+				_out.append(str);
+			} else {
+				for (char c : str) {
+					if (SAFE_CHARACTERS[static_cast<uint8_t>(c)]) {
+						_out.push_back(c);
+					}
+					else if (c == '\\') { _out += "\\\\"; }
+					else if (c == '\"') { _out += "\\\""; }
+					//else if (c == '\'') { _out += "\\\'"; }
+					else if (c == '\0') { _out += "\\0";  }
+					else if (c == '\b') { _out += "\\b";  }
+					else if (c == '\f') { _out += "\\f";  }
+					else if (c == '\n') { _out += "\\n";  }
+					else if (c == '\r') { _out += "\\r";  }
+					else if (c == '\t') { _out += "\\t";  }
+					else /*if (0 <= c && c < 0x20)*/ { write_unicode_16(static_cast<uint16_t>(c)); }
+				}
 			}
+
 			_out.push_back('"');
 		}
 
