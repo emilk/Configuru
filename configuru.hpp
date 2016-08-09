@@ -17,7 +17,8 @@ www.github.com/emilk/configuru
 	0.1.0: 2015-11-08 - First commit as stand-alone library
 	0.2.0: 2016-03-25 - check_dangling changes
 	0.2.1: 2016-04-11 - mark_accessed in dump_string by default
-	0.2.2: 2016-07-26 - optimizations (~15% faster).
+	0.2.2: 2016-07-27 - optimizations
+	0.2.3: 2016-08-09 - optimizations + add Config::emplace(key, value)
 
 # Getting started
 	For using:
@@ -128,6 +129,9 @@ namespace configuru
 		Config_T     _value;
 		unsigned     _nr       = BAD_INDEX; // Size of the object prior to adding this entry
 		mutable bool _accessed = false;     // Set to true if accessed.
+
+		Config_Entry() {}
+		Config_Entry(Config_T value, unsigned nr) : _value(std::move(value)), _nr(nr) {}
 	};
 
 	using Comment = std::string;
@@ -518,7 +522,10 @@ namespace configuru
 		bool has_key(const std::string& key) const;
 		size_t count(const std::string& key) const { return has_key(key) ? 1 : 0; }
 
-		void insert_or_assign(const std::string& key, Config&& config);
+		// Returns true iff the value was inserted, false if they key was already there.
+		bool emplace(std::string key, Config value);
+
+		void insert_or_assign(const std::string& key, Config&& value);
 
 		bool erase(const std::string& key);
 
@@ -1347,6 +1354,14 @@ namespace configuru
 		return as_object()._impl.count(key) != 0;
 	}
 
+	bool Config::emplace(std::string key, Config value)
+	{
+		auto&& object = as_object()._impl;
+		return object.emplace(
+			std::move(key),
+			Config::ObjectEntry{std::move(value), (unsigned)object.size()}).second;
+	}
+
 	void Config::insert_or_assign(const std::string& key, Config&& config)
 	{
 		auto&& object = as_object()._impl;
@@ -1669,11 +1684,20 @@ namespace configuru
 
 		bool skip_white(Comments* out_comments, int& out_indentation, bool break_on_newline);
 
-		bool skip_white_ignore_comments() {
+		bool skip_white_ignore_comments()
+		{
 			int indentation;
 			return skip_white(nullptr, indentation, false);
 		}
-		bool skip_pre_white(Config* config, int& out_indentation) {
+
+		bool skip_pre_white(Config* config, int& out_indentation)
+		{
+			if (!MAYBE_WHITE[static_cast<uint8_t>(_ptr[0])]) {
+				// Early out
+				out_indentation = -1;
+				return false;
+			}
+
 			Comments comments;
 			bool did_skip = skip_white(&comments, out_indentation, false);
 			if (!comments.empty()) {
@@ -1681,7 +1705,14 @@ namespace configuru
 			}
 			return did_skip;
 		}
-		bool skip_post_white(Config* config) {
+
+		bool skip_post_white(Config* config)
+		{
+			if (!MAYBE_WHITE[static_cast<uint8_t>(_ptr[0])]) {
+				// Early out
+				return false;
+			}
+
 			Comments comments;
 			int indentation;
 			bool did_skip = skip_white(&comments, indentation, true);
@@ -2298,7 +2329,7 @@ namespace configuru
 				_ptr += 1;
 				skip_white_ignore_comments();
 			} else if (_options.omit_colon_before_object && (_ptr[0] == '{' || _ptr[0] == '#')) {
-				// Ok to ommit : in this case
+				// Ok to omit : in this case
 			} else {
 				if (_options.object_separator_equal && _options.omit_colon_before_object) {
 					throw_error("Expected one of '=', ':', '{' or '#' after object key");
@@ -2321,7 +2352,7 @@ namespace configuru
 				has_separator = true;
 			}
 
-			object.insert_or_assign(key, std::move(value));
+			object.emplace(std::move(key), std::move(value));
 
 			bool is_last_element = !_ptr[0] || _ptr[0] == '}';
 
@@ -2363,11 +2394,11 @@ namespace configuru
 		if (_ptr[0] == '+') {
 			parse_assert(_options.unary_plus, "Prefixing numbers with + is forbidden.");
 			_ptr += 1;
-			skip_white_ignore_comments();
+			// skip_white_ignore_comments();
 		}
 		if (_ptr[0] == '-') {
 			_ptr += 1;
-			skip_white_ignore_comments();
+			// skip_white_ignore_comments();
 			sign = -1;
 		}
 
@@ -3123,38 +3154,35 @@ namespace configuru
 			write_hex_16(c);
 		}
 
-		bool all_safe_characters(const std::string& str)
-		{
-			for (char c : str) {
-				if (!SAFE_CHARACTERS[static_cast<uint8_t>(c)]) {
-					return false;
-				}
-			}
-			return true;
-		}
-
 		void write_quoted_string(const std::string& str)
 		{
 			_out.push_back('"');
 
-			if (all_safe_characters(str)) {
-				_out.append(str);
-			} else {
-				for (char c : str) {
-					if (SAFE_CHARACTERS[static_cast<uint8_t>(c)]) {
-						_out.push_back(c);
-					}
-					else if (c == '\\') { _out += "\\\\"; }
-					else if (c == '\"') { _out += "\\\""; }
-					//else if (c == '\'') { _out += "\\\'"; }
-					else if (c == '\0') { _out += "\\0";  }
-					else if (c == '\b') { _out += "\\b";  }
-					else if (c == '\f') { _out += "\\f";  }
-					else if (c == '\n') { _out += "\\n";  }
-					else if (c == '\r') { _out += "\\r";  }
-					else if (c == '\t') { _out += "\\t";  }
-					else /*if (0 <= c && c < 0x20)*/ { write_unicode_16(static_cast<uint16_t>(c)); }
+			const char* ptr = str.c_str();
+			const char* end = ptr + str.size();
+			while (ptr < end) {
+				// Output large swats of safe characters at once:
+				auto start = ptr;
+				while (SAFE_CHARACTERS[static_cast<uint8_t>(*ptr)]) {
+					++ptr;
 				}
+				if (start < ptr) {
+					_out.append(start, ptr - start);
+				}
+				if (ptr == end) { break; }
+
+				char c = *ptr;
+				++ptr;
+				if (c == '\\') { _out += "\\\\"; }
+				else if (c == '\"') { _out += "\\\""; }
+				//else if (c == '\'') { _out += "\\\'"; }
+				else if (c == '\0') { _out += "\\0";  }
+				else if (c == '\b') { _out += "\\b";  }
+				else if (c == '\f') { _out += "\\f";  }
+				else if (c == '\n') { _out += "\\n";  }
+				else if (c == '\r') { _out += "\\r";  }
+				else if (c == '\t') { _out += "\\t";  }
+				else /*if (0 <= c && c < 0x20)*/ { write_unicode_16(static_cast<uint16_t>(c)); }
 			}
 
 			_out.push_back('"');
