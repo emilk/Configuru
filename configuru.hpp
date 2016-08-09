@@ -29,7 +29,7 @@ www.github.com/emilk/configuru
 		#define CONFIGURU_IMPLEMENTATION 1
 		#include <configuru.hpp>
 
-	For more info, please se README.md (at www.github.com/emilk/configuru).
+	For more info, please see README.md (at www.github.com/emilk/configuru).
 */
 
 //  dP""b8  dP"Yb  88b 88 888888 88  dP""b8 88   88 88""Yb 88   88
@@ -396,8 +396,13 @@ namespace configuru
 		}
 #endif
 
-		const std::string& as_string() const { assert_type(String); return *_u.str; }
-		const char* c_str() const { assert_type(String); return _u.str->c_str(); }
+		const std::string& as_string() const
+		{
+			assert_type(String);
+			return *reinterpret_cast<const std::string*>(&_u.str[0]);
+		}
+
+		const char* c_str() const { assert_type(String); return as_string().c_str(); }
 
 		bool as_bool() const
 		{
@@ -625,21 +630,20 @@ namespace configuru
 
 		using ConfigComments_UP = std::unique_ptr<ConfigComments>;
 
-		Type  _type = Uninitialized;
-
 		union {
 			bool               b;
 			int64_t            i;
 			double             f;
-			const std::string* str;
+			uint8_t            str[sizeof(std::string)]; // Put the std::string here inline.
 			ConfigObject*      object;
 			ConfigArray*       array;
 			BadLookupInfo*     bad_lookup;
 		} _u;
 
 		DocInfo_SP        _doc; // So we can name the file
-		unsigned          _line = BAD_INDEX; // Where in the source, or -1. Lines are 1-indexed.
 		ConfigComments_UP _comments;
+		unsigned          _line = BAD_INDEX; // Where in the source, or -1. Lines are 1-indexed.
+		Type              _type = Uninitialized;
 	};
 
 	// ------------------------------------------------------------------------
@@ -1112,12 +1116,12 @@ namespace configuru
 	Config::Config(const char* str) : _type(String)
 	{
 		CONFIGURU_ASSERT(str != nullptr);
-		_u.str = new std::string(str);
+		new(_u.str) std::string(str);
 	}
 
 	Config::Config(std::string str) : _type(String)
 	{
-		_u.str = new std::string(move(str));
+		new(_u.str) std::string(move(str));
 	}
 
 	Config::Config(std::initializer_list<std::pair<std::string, Config>> values) : _type(Uninitialized)
@@ -1236,7 +1240,7 @@ namespace configuru
 
 		#if CONFIGURU_VALUE_SEMANTICS
 			if (_type == String) {
-				_u.str = new std::string(*o._u.str);
+				new(_u.str) std::string(o.as_string());
 			} else if (_type == BadLookupType) {
 				_u.bad_lookup = new BadLookupInfo(*o._u.bad_lookup);
 			} else if (_type == Object) {
@@ -1248,7 +1252,7 @@ namespace configuru
 			}
 		#else // !CONFIGURU_VALUE_SEMANTICS:
 			if (_type == String) {
-				_u.str = new std::string(*o._u.str);
+				new(_u.str) std::string(*o._u.str);
 			} else {
 				memcpy(&_u, &o._u, sizeof(_u));
 				if (_type == BadLookupType) { ++_u.bad_lookup->_ref_count; }
@@ -1281,6 +1285,8 @@ namespace configuru
 
 	void Config::free()
 	{
+		using Str = std::string; // HACK for ->~Str()
+
 		#if CONFIGURU_VALUE_SEMANTICS
 			if (_type == BadLookupType) {
 				delete _u.bad_lookup;
@@ -1289,7 +1295,7 @@ namespace configuru
 			} else if (_type == Array) {
 				delete _u.array;
 			} else if (_type == String) {
-				delete _u.str;
+				reinterpret_cast<std::string*>(&_u.str[0])->~Str();
 			}
 		#else // !CONFIGURU_VALUE_SEMANTICS:
 			if (_type == BadLookupType) {
@@ -1305,7 +1311,7 @@ namespace configuru
 					delete _u.array;
 				}
 			} else if (_type == String) {
-				delete _u.str;
+				reinterpret_cast<std::string*>(&_u.str[0])->~Str();
 			}
 		#endif // !CONFIGURU_VALUE_SEMANTICS
 
@@ -1394,7 +1400,7 @@ namespace configuru
 		if (a._type == Bool)   { return a._u.b    == b._u.b;    }
 		if (a._type == Int)    { return a._u.i    == b._u.i;    }
 		if (a._type == Float)  { return a._u.f    == b._u.f;    }
-		if (a._type == String) { return *a._u.str == *b._u.str; }
+		if (a._type == String) { return a.as_string() == b.as_string(); }
 		if (a._type == Object)    {
 			if (a._u.object == b._u.object) { return true; }
 			auto&& a_object = a.as_object()._impl;
@@ -1493,10 +1499,11 @@ namespace configuru
 		}
 	}
 
-	const char* Config::debug_descr() const {
+	const char* Config::debug_descr() const
+	{
 		switch (_type) {
 			case Bool:   return _u.b ? "true" : "false";
-			case String: return _u.str->c_str();
+			case String: return c_str();
 			default:     return type_str(_type);
 		}
 	}
