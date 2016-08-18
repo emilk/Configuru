@@ -6,8 +6,8 @@
 // #define CONFIGURU_ASSERT(test) TEST(test)
 #define CONFIGURU_ASSERT(test) CHECK_F(test)
 
-#define CONFIGURU_IMPLICIT_CONVERSIONS 0
-#define CONFIGURU_VALUE_SEMANTICS 1
+// CONFIGURU_IMPLICIT_CONVERSIONS and CONFIGURU_VALUE_SEMANTICS set by build system
+
 #define CONFIGURU_IMPLEMENTATION 1
 #include <../configuru.hpp>
 
@@ -148,6 +148,7 @@ void test_string(const std::string& json, const char* str, size_t len = 0)
 void test_strings()
 {
 	// Tests from https://github.com/miloyip/nativejson-benchmark
+	// Test UTF-8:
     test_string("\"\"",                         "");
     test_string("\"Hello\"",                    "Hello");
     test_string("\"Hello\\nWorld\"",            "Hello\nWorld");
@@ -589,10 +590,12 @@ void test_conversions()
 	TEST_EQ(explicit_double, 3.14);
 	auto explicit_string = (std::string)cfg["string"];
 	TEST_EQ(explicit_string, "Hello!");
+#if !CONFIGURU_IMPLICIT_CONVERSIONS
 	auto explicit_mixed_array = (std::vector<Config>)cfg["mixed_array"];
 	TEST_EQ(explicit_mixed_array[0], nullptr);
 	TEST_EQ(explicit_mixed_array[1], 1);
 	TEST_EQ(explicit_mixed_array[2], "two");
+#endif
 
 #if CONFIGURU_IMPLICIT_CONVERSIONS
 	bool implicit_bool; implicit_bool = cfg["bool"];
@@ -603,14 +606,15 @@ void test_conversions()
 	TEST_EQ(implicit_float, 2.75f);
 	double implicit_double; implicit_double = cfg["double"];
 	TEST_EQ(implicit_double, 3.14);
-	std::string implicit_string; implicit_string = cfg["string"];
-	TEST_EQ(implicit_string, "Hello!");
+	// std::string implicit_string; implicit_string = cfg["string"];
+	// TEST_EQ(implicit_string, "Hello!");
 	std::vector<Config> implicit_mixed_array; implicit_mixed_array = cfg["mixed_array"];
 	TEST_EQ(implicit_mixed_array[0], nullptr);
-	TEST_EQ(implicit_mixed_array[1], 1);
+	// TEST_EQ(implicit_mixed_array[1], 1);
 	TEST_EQ(implicit_mixed_array[2], "two");
 #endif
 
+#if !CONFIGURU_IMPLICIT_CONVERSIONS
 	auto parse_json = [](const std::string& json) {
 		return parse_string(json.c_str(), JSON, "");
 	};
@@ -632,6 +636,7 @@ void test_conversions()
 	TEST_EQ(pairs[0].second, 2.2f);
 	TEST_EQ(pairs[1].first, "3");
 	TEST_EQ(pairs[1].second, 4.4f);
+#endif
 }
 
 void test_copy_semantics()
