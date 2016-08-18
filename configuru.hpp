@@ -19,6 +19,7 @@ www.github.com/emilk/configuru
 	0.2.1: 2016-04-11 - mark_accessed in dump_string by default
 	0.2.2: 2016-07-27 - optimizations
 	0.2.3: 2016-08-09 - optimizations + add Config::emplace(key, value)
+	0.2.4: 2016-08-18 - fix compilation error for when CONFIGURU_VALUE_SEMANTICS=0
 
 # Getting started
 	For using:
@@ -1252,7 +1253,7 @@ namespace configuru
 			}
 		#else // !CONFIGURU_VALUE_SEMANTICS:
 			if (_type == String) {
-				new(_u.str) std::string(*o._u.str);
+				new(_u.str) std::string(o.as_string());
 			} else {
 				memcpy(&_u, &o._u, sizeof(_u));
 				if (_type == BadLookupType) { ++_u.bad_lookup->_ref_count; }
