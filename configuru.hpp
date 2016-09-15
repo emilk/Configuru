@@ -20,6 +20,7 @@ www.github.com/emilk/configuru
 	0.2.2: 2016-07-27 - optimizations
 	0.2.3: 2016-08-09 - optimizations + add Config::emplace(key, value)
 	0.2.4: 2016-08-18 - fix compilation error for when CONFIGURU_VALUE_SEMANTICS=0
+	0.3.0: 2016-09-15 - Add option to not align values (object_align_values)
 
 # Getting started
 	For using:
@@ -903,6 +904,7 @@ namespace configuru
 		bool        object_omit_comma        = true;  // Allow {a:1 b:2}
 		bool        object_trailing_comma    = true;  // Allow {a:1, b:2,}
 		bool        object_duplicate_keys    = false; // Allow {"a":1, "a":2}
+		bool        object_align_values      = true;  // Add spaces after keys to align subsequent values.
 
 		// Strings
 		bool        str_csharp_verbatim      = true;  // Allow @"Verbatim\strings"
@@ -965,6 +967,7 @@ namespace configuru
 		options.object_omit_comma        = false;
 		options.object_trailing_comma    = false;
 		options.object_duplicate_keys    = false; // To be 100% JSON compatile, this should be true, but it is error prone.
+		options.object_align_values      = true;  // Looks better.
 
 		// Strings
 		options.str_csharp_verbatim      = false;
@@ -2990,10 +2993,11 @@ namespace configuru
 			pairs.reserve(object.size());
 
 			size_t longest_key = 0;
+			bool align_values = !_compact && _options.object_align_values;
 
 			for (auto it=object.begin(); it!=object.end(); ++it) {
 				pairs.push_back(it);
-				if (!_compact) {
+				if (align_values) {
 					longest_key = std::max(longest_key, it->first.size());
 				}
 			}
@@ -3020,8 +3024,10 @@ namespace configuru
 					_out.push_back(' ');
 				} else {
 					_out += ": ";
-					for (size_t j=it->first.size(); j<longest_key; ++j) {
-						_out.push_back(' ');
+					if (align_values) {
+						for (size_t j=it->first.size(); j<longest_key; ++j) {
+							_out.push_back(' ');
+						}
 					}
 				}
 				write_value(indent, value, false, true);

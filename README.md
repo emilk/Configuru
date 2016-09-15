@@ -354,7 +354,7 @@ In contrast, here's how the output looks in Configuru:
 }
 ```
 
-Note how Configuru refrains from unnecessary line breaks on short arrays and does not write superfluous (and ugly!) trailing decimals. Configuru also writes the keys of the objects in the same order as it was given (unless the `sort_keys` option is explicitly set). The aligned values is just a preference of mine, inspired by [how id software does it](http://kotaku.com/5975610/the-exceptional-beauty-of-doom-3s-source-code). Writing the same data in the CFG format makes it turn out like this:
+Note how Configuru refrains from unnecessary line breaks on short arrays and does not write superfluous (and ugly!) trailing decimals. Configuru also writes the keys of the objects in the same order as it was given (unless the `sort_keys` option is explicitly set). The aligned values is just a preference of mine, inspired by [how id software does it](http://kotaku.com/5975610/the-exceptional-beauty-of-doom-3s-source-code) (turn off with `object_align_values=false`). Writing the same data in the CFG format makes it turn out like this:
 
 	float:       3.14
 	double:      3.14
