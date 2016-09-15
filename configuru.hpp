@@ -49,16 +49,16 @@ www.github.com/emilk/configuru
 #ifndef CONFIGURU_HEADER_HPP
 #define CONFIGURU_HEADER_HPP
 
-#include <algorithm>
 #include <atomic>
 #include <cmath>
+#include <cstddef>
 #include <cstring>
+#include <functional>
 #include <initializer_list>
+#include <iosfwd>
 #include <iterator>
-#include <limits>
 #include <map>
 #include <memory>
-#include <ostream>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -1043,7 +1043,8 @@ namespace configuru
 	static const FormatOptions JSON      = make_json_options();
 	static const FormatOptions FORGIVING = make_forgiving_options();
 
-	struct ParseInfo {
+	struct ParseInfo
+	{
 		std::map<std::string, Config> parsed_files; // Two #include gives same Config tree.
 	};
 
@@ -1086,6 +1087,10 @@ This will define all the Configuru functions so that the linker may find them.
 
 #if defined(CONFIGURU_IMPLEMENTATION) && !defined(CONFIGURU_HAS_BEEN_IMPLEMENTED)
 #define CONFIGURU_HAS_BEEN_IMPLEMENTED
+
+#include <algorithm>
+#include <limits>
+#include <ostream>
 
 // ----------------------------------------------------------------------------
 namespace configuru
@@ -2405,11 +2410,9 @@ namespace configuru
 		if (_ptr[0] == '+') {
 			parse_assert(_options.unary_plus, "Prefixing numbers with + is forbidden.");
 			_ptr += 1;
-			// skip_white_ignore_comments();
 		}
 		if (_ptr[0] == '-') {
 			_ptr += 1;
-			// skip_white_ignore_comments();
 			sign = -1;
 		}
 
