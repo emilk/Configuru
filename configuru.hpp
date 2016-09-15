@@ -107,10 +107,10 @@ namespace configuru
 	struct Include
 	{
 		DocInfo_SP doc;
-		unsigned line = BAD_INDEX;
+		Index      line = BAD_INDEX;
 
 		Include() {}
-		Include(DocInfo_SP d, unsigned l) : doc(d), line(l) {}
+		Include(DocInfo_SP d, Index l) : doc(d), line(l) {}
 	};
 
 	struct DocInfo
@@ -129,11 +129,11 @@ namespace configuru
 	struct Config_Entry
 	{
 		Config_T     _value;
-		unsigned     _nr       = BAD_INDEX; // Size of the object prior to adding this entry
+		Index        _nr       = BAD_INDEX; // Size of the object prior to adding this entry
 		mutable bool _accessed = false;     // Set to true if accessed.
 
 		Config_Entry() {}
-		Config_Entry(Config_T value, unsigned nr) : _value(std::move(value)), _nr(nr) {}
+		Config_Entry(Config_T value, Index nr) : _value(std::move(value)), _nr(nr) {}
 	};
 
 	using Comment = std::string;
@@ -272,7 +272,7 @@ namespace configuru
 		// Used by the parser - no need to use directly.
 		void make_object();
 		void make_array();
-		void tag(const DocInfo_SP& doc, unsigned line, unsigned column);
+		void tag(const DocInfo_SP& doc, Index line, Index column);
 
 		// Preferred way to create objects!
 		static Config object();
@@ -318,8 +318,8 @@ namespace configuru
 		// Returns file:line iff available.
 		std::string where() const;
 
-		// -1 if not set.
-		unsigned line() const { return _line; }
+		// BAD_INDEX if not set.
+		Index line() const { return _line; }
 
 		// Handle to document.
 		const DocInfo_SP& doc() const { return _doc; }
@@ -644,7 +644,7 @@ namespace configuru
 
 		DocInfo_SP        _doc; // So we can name the file
 		ConfigComments_UP _comments;
-		unsigned          _line = BAD_INDEX; // Where in the source, or -1. Lines are 1-indexed.
+		Index             _line = BAD_INDEX; // Where in the source, or BAD_INDEX. Lines are 1-indexed.
 		Type              _type = Uninitialized;
 	};
 
@@ -840,7 +840,7 @@ namespace configuru
 	class ParseError : public std::exception
 	{
 	public:
-		ParseError(const DocInfo_SP& doc, unsigned line, unsigned column, const std::string& msg)
+		ParseError(const DocInfo_SP& doc, Index line, Index column, const std::string& msg)
 			: _line(line), _column(column)
 		{
 			_what = doc->filename + ":" + std::to_string(line) + ":" + std::to_string(column);
@@ -853,11 +853,11 @@ namespace configuru
 			return _what.c_str();
 		}
 
-		unsigned line()   const noexcept { return _line; }
-		unsigned column() const noexcept { return _column; }
+		Index line()   const noexcept { return _line; }
+		Index column() const noexcept { return _column; }
 
 	private:
-		unsigned _line, _column;
+		Index _line, _column;
 		std::string _what;
 	};
 
@@ -1118,7 +1118,7 @@ namespace configuru
 			std::atomic<unsigned> _ref_count { 1 };
 		#endif
 
-		BadLookupInfo(DocInfo_SP doc_, unsigned line_, std::string key_)
+		BadLookupInfo(DocInfo_SP doc_, Index line_, std::string key_)
 			: doc(std::move(doc_)), line(line_), key(std::move(key_)) {}
 	};
 
@@ -1190,7 +1190,7 @@ namespace configuru
 		return ret;
 	}
 
-	void Config::tag(const DocInfo_SP& doc, unsigned line, unsigned column)
+	void Config::tag(const DocInfo_SP& doc, Index line, Index column)
 	{
 		_doc = doc;
 		_line = line;
@@ -1533,7 +1533,7 @@ namespace configuru
 		return "BROKEN Config";
 	}
 
-	std::string where_is(const DocInfo_SP& doc, unsigned line)
+	std::string where_is(const DocInfo_SP& doc, Index line)
 	{
 		if (doc) {
 			std::string ret = doc->filename;
@@ -1768,7 +1768,7 @@ namespace configuru
 			_line_start = s.line_start;
 		}
 
-		unsigned column() const
+		Index column() const
 		{
 			return static_cast<unsigned>(_ptr - _line_start + 1);
 		}
@@ -1878,7 +1878,7 @@ namespace configuru
 		ParseInfo&    _info;
 
 		const char*   _ptr;
-		unsigned      _line_nr;
+		Index         _line_nr;
 		const char*   _line_start;
 		int           _indentation = 0; // Expected number of tabs between a \n and the next key/value
 	};
