@@ -21,6 +21,7 @@ www.github.com/emilk/configuru
 	0.2.3: 2016-08-09 - optimizations + add Config::emplace(key, value)
 	0.2.4: 2016-08-18 - fix compilation error for when CONFIGURU_VALUE_SEMANTICS=0
 	0.3.0: 2016-09-15 - Add option to not align values (object_align_values)
+	0.3.1: 2016-09-19 - Fix crashes on some compilers/stdlibs
 
 # Getting started
 	For using:
@@ -398,13 +399,8 @@ namespace configuru
 		}
 #endif
 
-		const std::string& as_string() const
-		{
-			assert_type(String);
-			return *reinterpret_cast<const std::string*>(&_u.str[0]);
-		}
-
-		const char* c_str() const { assert_type(String); return as_string().c_str(); }
+		const std::string& as_string() const { assert_type(String); return *_u.str; }
+		const char* c_str() const { assert_type(String); return _u.str->c_str(); }
 
 		bool as_bool() const
 		{
@@ -636,7 +632,7 @@ namespace configuru
 			bool               b;
 			int64_t            i;
 			double             f;
-			uint8_t            str[sizeof(std::string)]; // Put the std::string here inline.
+			const std::string* str;
 			ConfigObject*      object;
 			ConfigArray*       array;
 			BadLookupInfo*     bad_lookup;
@@ -1125,12 +1121,12 @@ namespace configuru
 	Config::Config(const char* str) : _type(String)
 	{
 		CONFIGURU_ASSERT(str != nullptr);
-		new(_u.str) std::string(str);
+		_u.str = new std::string(str);
 	}
 
 	Config::Config(std::string str) : _type(String)
 	{
-		new(_u.str) std::string(move(str));
+		_u.str = new std::string(move(str));
 	}
 
 	Config::Config(std::initializer_list<std::pair<std::string, Config>> values) : _type(Uninitialized)
@@ -1249,7 +1245,7 @@ namespace configuru
 
 		#if CONFIGURU_VALUE_SEMANTICS
 			if (_type == String) {
-				new(_u.str) std::string(o.as_string());
+				_u.str = new std::string(*o._u.str);
 			} else if (_type == BadLookupType) {
 				_u.bad_lookup = new BadLookupInfo(*o._u.bad_lookup);
 			} else if (_type == Object) {
@@ -1261,7 +1257,7 @@ namespace configuru
 			}
 		#else // !CONFIGURU_VALUE_SEMANTICS:
 			if (_type == String) {
-				new(_u.str) std::string(o.as_string());
+				_u.str = new std::string(*o._u.str);
 			} else {
 				memcpy(&_u, &o._u, sizeof(_u));
 				if (_type == BadLookupType) { ++_u.bad_lookup->_ref_count; }
@@ -1294,8 +1290,6 @@ namespace configuru
 
 	void Config::free()
 	{
-		using Str = std::string; // HACK for ->~Str()
-
 		#if CONFIGURU_VALUE_SEMANTICS
 			if (_type == BadLookupType) {
 				delete _u.bad_lookup;
@@ -1304,7 +1298,7 @@ namespace configuru
 			} else if (_type == Array) {
 				delete _u.array;
 			} else if (_type == String) {
-				reinterpret_cast<std::string*>(&_u.str[0])->~Str();
+				delete _u.str;
 			}
 		#else // !CONFIGURU_VALUE_SEMANTICS:
 			if (_type == BadLookupType) {
@@ -1320,7 +1314,7 @@ namespace configuru
 					delete _u.array;
 				}
 			} else if (_type == String) {
-				reinterpret_cast<std::string*>(&_u.str[0])->~Str();
+				delete _u.str;
 			}
 		#endif // !CONFIGURU_VALUE_SEMANTICS
 
@@ -1409,7 +1403,7 @@ namespace configuru
 		if (a._type == Bool)   { return a._u.b    == b._u.b;    }
 		if (a._type == Int)    { return a._u.i    == b._u.i;    }
 		if (a._type == Float)  { return a._u.f    == b._u.f;    }
-		if (a._type == String) { return a.as_string() == b.as_string(); }
+		if (a._type == String) { return *a._u.str == *b._u.str; }
 		if (a._type == Object)    {
 			if (a._u.object == b._u.object) { return true; }
 			auto&& a_object = a.as_object()._impl;
@@ -1512,7 +1506,7 @@ namespace configuru
 	{
 		switch (_type) {
 			case Bool:   return _u.b ? "true" : "false";
-			case String: return c_str();
+			case String: return _u.str->c_str();
 			default:     return type_str(_type);
 		}
 	}
