@@ -33,7 +33,7 @@ public:
 		}
 	}
 
-	void print_results()
+	void print_results_and_exit()
 	{
 		if (_num_failed == 0) {
 			printf("%s%lu/%lu tests passed!%s\n", loguru::terminal_green(), _num_run, _num_run, loguru::terminal_reset());
@@ -42,6 +42,7 @@ public:
 		}
 		printf("\n\n");
 		fflush(stdout);
+		std::exit(_num_failed == 0 ? EXIT_SUCCESS : EXIT_FAILURE);
 	}
 
 private:
