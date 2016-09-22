@@ -22,6 +22,7 @@ www.github.com/emilk/configuru
 	0.2.4: 2016-08-18 - fix compilation error for when CONFIGURU_VALUE_SEMANTICS=0
 	0.3.0: 2016-09-15 - Add option to not align values (object_align_values)
 	0.3.1: 2016-09-19 - Fix crashes on some compilers/stdlibs
+	0.3.2: 2016-09-22 - Add support for Json::array(some_container)
 
 # Getting started
 	For using:
@@ -283,6 +284,19 @@ namespace configuru
 		static Config array();
 		static Config array(std::initializer_list<Config> values);
 
+		template<typename Container>
+		static Config array(const Container& container)
+		{
+			Config ret;
+			ret.make_array();
+			auto& impl = ret._u.array->_impl;
+			impl.reserve(container.size());
+			for (auto&& v : container) {
+				impl.emplace_back(v);
+			}
+			return ret;
+		}
+
 		// ----------------------------------------
 
 		~Config();
@@ -291,7 +305,7 @@ namespace configuru
 		Config(Config&& o) noexcept;
 		Config& operator=(const Config& o);
 
-		// Will still remmeber file/line when assigned an object which has no file/line
+		// Will still remember file/line when assigned an object which has no file/line
 		Config& operator=(Config&& o) noexcept;
 
 		// Swaps file/line too.
