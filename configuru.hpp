@@ -23,6 +23,7 @@ www.github.com/emilk/configuru
 	0.3.0: 2016-09-15 - Add option to not align values (object_align_values)
 	0.3.1: 2016-09-19 - Fix crashes on some compilers/stdlibs
 	0.3.2: 2016-09-22 - Add support for Json::array(some_container)
+	0.3.3: 2017-01-10 - Add some missing iterator members
 
 # Getting started
 	For using:
@@ -670,6 +671,7 @@ namespace configuru
 		class iterator
 		{
 		public:
+			iterator() = default;
 			explicit iterator(ConfigObjectImpl::iterator it) : _it(std::move(it)) {}
 
 			const iterator& operator*() const {
@@ -680,6 +682,10 @@ namespace configuru
 			iterator& operator++() {
 				++_it;
 				return *this;
+			}
+
+			friend bool operator==(const iterator& a, const iterator& b) {
+				return a._it == b._it;
 			}
 
 			friend bool operator!=(const iterator& a, const iterator& b) {
@@ -696,6 +702,7 @@ namespace configuru
 		class const_iterator
 		{
 		public:
+			const_iterator() = default;
 			explicit const_iterator(ConfigObjectImpl::const_iterator it) : _it(std::move(it)) {}
 
 			const const_iterator& operator*() const {
@@ -706,6 +713,10 @@ namespace configuru
 			const_iterator& operator++() {
 				++_it;
 				return *this;
+			}
+
+			friend bool operator==(const const_iterator& a, const const_iterator& b) {
+				return a._it == b._it;
 			}
 
 			friend bool operator!=(const const_iterator& a, const const_iterator& b) {

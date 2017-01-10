@@ -33,7 +33,7 @@ public:
 		}
 	}
 
-	void print_results_and_exit()
+	void print_results_and_exit() __attribute__((noreturn))
 	{
 		if (_num_failed == 0) {
 			printf("%s%lu/%lu tests passed!%s\n", loguru::terminal_green(), _num_run, _num_run, loguru::terminal_reset());
