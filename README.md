@@ -13,6 +13,11 @@ That being said, I would appreciate credit!
 If you find this library useful, send a tweet to [@ernerfeldt](https://twitter.com/ernerfeldt) or mail me at emil.ernerfeldt@gmail.com.
 
 
+Documentation
+-------------------------------------------------------------------------------
+You can read the documentation here: https://emilk.github.io/Configuru/html/index.html
+
+
 Overview
 -------------------------------------------------------------------------------
 Configuru is a JSON parser/writer for C++11. Configuru was written for human created/edited config files and therefore prioritizes helpful error messages over parse speed.
