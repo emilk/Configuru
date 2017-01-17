@@ -1,5 +1,6 @@
 var searchData=
 [
+  ['array_3c_20t_2c_20n_20_3e',['array&lt; T, N &gt;',['../classconfiguru_1_1Config.html#a031504888a14f5a146050a456bbd1b6e',1,'configuru::Config']]],
   ['object',['object',['../classconfiguru_1_1Config.html#ae01c8ba2af446cdc6f57900491603e9d',1,'configuru::Config::object()'],['../classconfiguru_1_1Config.html#ac9dab8cf113cc154706a43f4ef4aa365',1,'configuru::Config::object(std::initializer_list&lt; std::pair&lt; std::string, Config &gt;&gt; values)']]],
   ['object_5falign_5fvalues',['object_align_values',['../structconfiguru_1_1FormatOptions.html#afcd19a49b7e72146f65bece592f71288',1,'configuru::FormatOptions']]],
   ['object_5fduplicate_5fkeys',['object_duplicate_keys',['../structconfiguru_1_1FormatOptions.html#af97179473358b428cfdb80c494f93451',1,'configuru::FormatOptions']]],

@@ -24,6 +24,7 @@ www.github.com/emilk/configuru
 	0.3.1: 2016-09-19 - Fix crashes on some compilers/stdlibs
 	0.3.2: 2016-09-22 - Add support for Json::array(some_container)
 	0.3.3: 2017-01-10 - Add some missing iterator members
+	0.3.4: 2017-01-17 - Add cast conversion to std::array
 
 # Getting started
 	For using:
@@ -52,6 +53,8 @@ www.github.com/emilk/configuru
 #ifndef CONFIGURU_HEADER_HPP
 #define CONFIGURU_HEADER_HPP
 
+#include <algorithm>
+#include <array>
 #include <atomic>
 #include <cmath>
 #include <cstddef>
@@ -403,6 +406,17 @@ namespace configuru
 			return ret;
 		}
 
+		/// Convenience conversion to std::array
+		template<typename T, size_t N>
+		operator std::array<T, N>() const
+		{
+			const auto& array = as_array();
+			check(array.size() == N, "Array size mismatch.");
+			std::array<T, N> ret;
+			std::copy(array.begin(), array.end(), ret.begin());
+			return ret;
+		}
+
 		/// Convenience conversion of an array of length 2 to an std::pair.
 		/// TODO: generalize for tuples.
 		template<typename Left, typename Right>
@@ -426,6 +440,19 @@ namespace configuru
 			ret.reserve(array.size());
 			for (auto&& config : array) {
 				ret.push_back(static_cast<T>(config));
+			}
+			return ret;
+		}
+
+		/// Convenience conversion to std::array
+		template<typename T, size_t N>
+		explicit operator std::array<T, N>() const
+		{
+			const auto& array = as_array();
+			check(array.size() == N, "Array size mismatch.");
+			std::array<T, N> ret;
+			for (size_t i =0; i < N; ++i) {
+				ret[i] = static_cast<T>(array[i]);
 			}
 			return ret;
 		}

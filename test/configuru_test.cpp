@@ -624,6 +624,10 @@ void test_conversions()
 	TEST_EQ(strings[0], "hello");
 	TEST_EQ(strings[1], "you");
 
+	auto array = (std::array<int, 2>)parse_json(R"([32, 20])");
+	TEST_EQ(array[0], 32);
+	TEST_EQ(array[1], 20);
+
 	auto ints = (std::vector<int>)parse_json(R"([0,1,2])");
 	TEST_EQ(ints.size(), 3u);
 	TEST_EQ(ints[0], 0);
