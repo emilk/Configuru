@@ -1,0 +1,5 @@
+var searchData=
+[
+  ['get',['get',['../classconfiguru_1_1Config.html#ab7fb67f4a986aa4d3b1668c3d47788f5',1,'configuru::Config::get() const '],['../classconfiguru_1_1Config.html#a4e43806486149894e405aa99077e9b0f',1,'configuru::Config::get(const std::string &amp;key) const ']]],
+  ['get_5for',['get_or',['../classconfiguru_1_1Config.html#aa68ef4e1e3ac45227844583f093ce78d',1,'configuru::Config::get_or(const T &amp;default_value) const '],['../classconfiguru_1_1Config.html#a7e58567283511b01529a7b7d595ccc22',1,'configuru::Config::get_or(const std::string &amp;key, const T &amp;default_value) const '],['../classconfiguru_1_1Config.html#aefce416dfc7caf5c84b979235be40971',1,'configuru::Config::get_or(const std::string &amp;key, const char *default_value) const '],['../classconfiguru_1_1Config.html#a78dc6e1809951612f08a8f0298d4bcd5',1,'configuru::Config::get_or(std::initializer_list&lt; std::string &gt; keys, const T &amp;default_value) const '],['../classconfiguru_1_1Config.html#a45b89f5480a5494f51fa7786342474af',1,'configuru::Config::get_or(std::initializer_list&lt; std::string &gt; keys, const char *default_value) const ']]]
+];
