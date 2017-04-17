@@ -720,7 +720,7 @@ bool operator==(const TestStruct& a, const TestStruct& b)
 }
 VISITABLE_STRUCT(TestStruct, some_int, some_string);
 
-void test_to_from()
+void test_serialize_deserialize()
 {
 	std::vector<std::string> errors;
 	auto store_errors = [&errors](const std::string& error) { errors.push_back(error); };
@@ -795,7 +795,7 @@ int main()
 	test_copy_semantics();
 	test_swap();
 	test_get_or();
-	test_to_from();
+	test_serialize_deserialize();
 
 	// ------------------------------------------------------------------------
 

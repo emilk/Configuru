@@ -243,6 +243,39 @@ dump_file("output.json", cfg, JSON);
 ```
 
 
+Usage (visit_struct.hpp)
+-------------------------------------------------------------------------------
+If you include visit_struct.hpp from https://github.com/cbeck88/visit_struct *before* including configuru.hpp you will enable the following:
+
+``` C++
+#include <visit_struct/visit_struct.hpp>
+#include <configuru.hpp>
+
+struct Foo
+{
+	float bar;
+	std::string baz;
+};
+VISITABLE_STRUCT(Foo, bar, baz);
+
+void error_reporter(std::string str)
+{
+	std::cerr << str << std::endl; // or throw or ignore
+}
+
+int main()
+{
+	Foo foo{42, "fortytwo"};
+	configur::Config cfg = configuru::serialize(foo);
+	// Save/load cfg
+	configuru::deserialize(&foo, cfg, error_reporter);
+}
+```
+
+The `serialize/deserialize` functions supports numbers, `bool`, `std::string`, `std::vector` and `struct`s annotated with `VISITABLE_STRUCT`.
+It is recursive, so a `struct` can contain an `std::vector` of other `struct`s if both types of `struct`s are annotated with `VISITABLE_STRUCT`.
+
+
 Reference semantics vs value semantics
 -------------------------------------------------------------------------------
 By default, Config objects acts like reference types, e.g. like a `std::shared_ptr`:
