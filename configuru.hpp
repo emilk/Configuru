@@ -22,9 +22,10 @@ www.github.com/emilk/configuru
 	0.2.4: 2016-08-18 - fix compilation error for when CONFIGURU_VALUE_SEMANTICS=0
 	0.3.0: 2016-09-15 - Add option to not align values (object_align_values)
 	0.3.1: 2016-09-19 - Fix crashes on some compilers/stdlibs
-	0.3.2: 2016-09-22 - Add support for Json::array(some_container)
+	0.3.2: 2016-09-22 - Add support for Config::array(some_container)
 	0.3.3: 2017-01-10 - Add some missing iterator members
 	0.3.4: 2017-01-17 - Add cast conversion to std::array
+	0.4.0: 2017-04-17 - Automatic (de)serialization with serialize/deserialize with https://github.com/cbeck88/visit_struct
 
 # Getting started
 	For using:
@@ -67,6 +68,7 @@ www.github.com/emilk/configuru
 #include <memory>
 #include <stdexcept>
 #include <string>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -883,7 +885,7 @@ namespace configuru
 
 	// ------------------------------------------------------------------------
 
-	/// Prints in JSON but in a fail-safe mannor, allowing uninitalized keys and inf/nan.
+	/// Prints in JSON but in a fail-safe manner, allowing uninitialized keys and inf/nan.
 	std::ostream& operator<<(std::ostream& os, const Config& cfg);
 
 	// ------------------------------------------------------------------------
@@ -904,7 +906,7 @@ namespace configuru
 		}
 	}
 
-	inline void clear_doc(Config& root) // TODO: shouldn't be needed. Replace with some info of wether a Config is the root of the document it is in.
+	inline void clear_doc(Config& root) // TODO: shouldn't be needed. Replace with some info of whether a Config is the root of the document it is in.
 	{
 		visit_configs(root, [&](Config& cfg){ cfg.set_doc(nullptr); });
 	}
@@ -1173,6 +1175,172 @@ namespace configuru
 	/// Writes the config to a file. Like dump_string, but can may also call CONFIGURU_ONERROR
 	/// if it fails to write to the given path.
 	void dump_file(const std::string& path, const Config& config, const FormatOptions& options);
+
+	// ----------------------------------------------------------
+	// Automatic (de)serialize of most things.
+	// Include <visit_struct/visit_struct.hpp> (from https://github.com/cbeck88/visit_struct)
+	// before including <configuru.hpp> to get this feature.
+
+	#ifdef VISITABLE_STRUCT
+		template <typename Container>
+		struct is_container : std::false_type { };
+
+		// template <typename... Ts> struct is_container<std::list<Ts...> > : std::true_type { };
+		template <typename... Ts> struct is_container<std::vector<Ts...> > : std::true_type { };
+
+		// ----------------------------------------------------------------------------
+
+		Config serialize(const std::string& some_string);
+
+		template<typename T>
+		typename std::enable_if<std::is_arithmetic<T>::value, Config>::type
+		serialize(const T& some_value);
+
+		template<typename T, size_t N>
+		Config serialize(T (&some_array)[N]);
+
+		template<typename T>
+		typename std::enable_if<is_container<T>::value, Config>::type
+		serialize(const T& some_container);
+
+		template<typename T>
+		typename std::enable_if<visit_struct::traits::is_visitable<T>::value, Config>::type
+		serialize(const T& some_struct);
+
+		// ----------------------------------------------------------------------------
+
+		inline Config serialize(const std::string& some_string)
+		{
+			return Config(some_string);
+		}
+
+		template<typename T>
+		typename std::enable_if<std::is_arithmetic<T>::value, Config>::type
+		serialize(const T& some_value)
+		{
+			return Config(some_value);
+		}
+
+		template<typename T, size_t N>
+		Config serialize(T (&some_array)[N])
+		{
+			auto config = Config::array();
+			for (size_t i = 0; i < N; ++i) {
+				config.push_back(serialize(some_array[i]));
+			}
+			return config;
+		}
+
+		template<typename T>
+		typename std::enable_if<is_container<T>::value, Config>::type
+		serialize(const T& some_container)
+		{
+			auto config = Config::array();
+			for (const auto& value : some_container) {
+				config.push_back(serialize(value));
+			}
+			return config;
+		}
+
+		template<typename T>
+		typename std::enable_if<visit_struct::traits::is_visitable<T>::value, Config>::type
+		serialize(const T& some_struct)
+		{
+			auto config = Config::object();
+			visit_struct::apply_visitor([&config](const std::string& name, const auto& value) {
+				config[name] = serialize(value);
+			}, some_struct);
+			return config;
+		}
+
+		// ----------------------------------------------------------------------------
+
+		/// Called when there is a problem in deserialize.
+		using ConversionError = std::function<void(std::string)>;
+
+		void deserialize(std::string* some_string, const Config& config, const ConversionError& on_error);
+
+		template<typename T>
+		typename std::enable_if<std::is_arithmetic<T>::value>::type
+		deserialize(T* some_value, const Config& config, const ConversionError& on_error);
+
+		template<typename T, size_t N>
+		typename std::enable_if<std::is_arithmetic<T>::value>::type
+		deserialize(T (*some_array)[N], const Config& config, const ConversionError& on_error);
+
+		template<typename T>
+		typename std::enable_if<is_container<T>::value>::type
+		deserialize(T* some_container, const Config& config, const ConversionError& on_error);
+
+		template<typename T>
+		typename std::enable_if<visit_struct::traits::is_visitable<T>::value>::type
+		deserialize(T* some_struct, const Config& config, const ConversionError& on_error);
+
+		// ----------------------------------------------------------------------------
+
+		inline void deserialize(std::string* some_string, const Config& config, const ConversionError& on_error)
+		{
+			*some_string = config.as_string();
+		}
+
+		template<typename T>
+		typename std::enable_if<std::is_arithmetic<T>::value>::type
+		deserialize(T* some_value, const Config& config, const ConversionError& on_error)
+		{
+			*some_value = as<T>(config);
+		}
+
+		template<typename T, size_t N>
+		typename std::enable_if<std::is_arithmetic<T>::value>::type
+		deserialize(T (*some_array)[N], const Config& config, const ConversionError& on_error)
+		{
+			if (config.array_size() != N) {
+				if (on_error) {
+					on_error(config.where() + "Expected array to be " + std::to_string(N) + " long.");
+				}
+			} else {
+				for (size_t i = 0; i < N; ++i) {
+					deserialize(&(*some_array)[i], config[i], on_error);
+				}
+			}
+		}
+
+		template<typename T>
+		typename std::enable_if<is_container<T>::value>::type
+		deserialize(T* some_container, const Config& config, const ConversionError& on_error)
+		{
+			if (!config.is_array()) {
+				if (on_error) {
+					on_error(config.where() + "Failed to deserialize container: config is not an array.");
+				}
+			} else {
+				some_container->clear();
+				some_container->reserve(config.array_size());
+				for (const auto& value : config.as_array()) {
+					some_container->push_back({});
+					deserialize(&some_container->back(), value, on_error);
+				}
+			}
+		}
+
+		template<typename T>
+		typename std::enable_if<visit_struct::traits::is_visitable<T>::value>::type
+		deserialize(T* some_struct, const Config& config, const ConversionError& on_error)
+		{
+			if (!config.is_object()) {
+				if (on_error) {
+					on_error(config.where() + "Failed to deserialize object: config is not an object.");
+				}
+			} else {
+				visit_struct::apply_visitor([&config, &on_error](const std::string& name, auto& value) {
+					if (config.has_key(name)) {
+						deserialize(&value, config[name], on_error);
+					}
+				}, *some_struct);
+			}
+		}
+	#endif // VISITABLE_STRUCT
+
 } // namespace configuru
 
 #endif // CONFIGURU_HEADER_HPP

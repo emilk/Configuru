@@ -1,7 +1,13 @@
-#include "simple_test.hpp"
-
+// For using CHECK_F for CONFIGURU_ASSERT:
 #define LOGURU_IMPLEMENTATION 1
 #include <loguru.hpp>
+
+// With visit_struct.hpp (from https://github.com/cbeck88/visit_struct) we get semi-automatic
+// (de)serialization of structs.
+// Must be included before configuru.hpp
+#include <visit_struct/visit_struct.hpp>
+
+// ----------------------------------------------------------------------------
 
 // #define CONFIGURU_ASSERT(test) TEST(test)
 #define CONFIGURU_ASSERT(test) CHECK_F(test)
@@ -10,6 +16,10 @@
 
 #define CONFIGURU_IMPLEMENTATION 1
 #include <../configuru.hpp>
+
+// ----------------------------------------------------------------------------
+
+#include "simple_test.hpp"
 
 #include <iostream>
 
@@ -695,6 +705,50 @@ void test_get_or()
 	}
 }
 
+// ----------------------------------------------------------------------------
+
+struct TestStruct
+{
+	std::string some_string = "hello";
+	int         some_int    = 42;
+};
+bool operator==(const TestStruct& a, const TestStruct& b)
+{
+	return
+		a.some_string == b.some_string &&
+		a.some_int    == b.some_int;
+}
+VISITABLE_STRUCT(TestStruct, some_int, some_string);
+
+void test_to_from()
+{
+	std::vector<std::string> errors;
+	auto store_errors = [&errors](const std::string& error) { errors.push_back(error); };
+
+	TestStruct test_struct;
+	configuru::deserialize(&test_struct, configuru::parse_string("{}", CFG, ""), store_errors);
+	TEST(errors.empty());
+	TEST_EQ(test_struct.some_string, "hello");
+
+	TEST_EQ(test_struct.some_string, "hello");
+	TEST_EQ(test_struct.some_int,    42);
+
+	configuru::deserialize(&test_struct, configuru::parse_string("{some_int: 17}", CFG, ""), store_errors);
+	TEST(errors.empty());
+	TEST_EQ(test_struct.some_string, "hello");
+
+	TEST_EQ(test_struct.some_string, "hello");
+	TEST_EQ(test_struct.some_int,    17);
+
+	const std::vector<TestStruct> before{{"seven", 7}, {"eight", 8}};
+	std::vector<TestStruct> after;
+	configuru::deserialize(&after, configuru::serialize(before), store_errors);
+	TEST(errors.empty());
+	TEST_EQ(before, after);
+}
+
+// ----------------------------------------------------------------------------
+
 void configuru_vs_nlohmann()
 {
 	nlohmann::json nlohmann_json {
@@ -741,6 +795,7 @@ int main()
 	test_copy_semantics();
 	test_swap();
 	test_get_or();
+	test_to_from();
 
 	// ------------------------------------------------------------------------
 

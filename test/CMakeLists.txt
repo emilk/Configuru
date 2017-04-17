@@ -29,7 +29,7 @@ include_directories(SYSTEM .)
 MESSAGE(STATUS "CMAKE_BUILD_TYPE: ${CMAKE_BUILD_TYPE}")
 MESSAGE(STATUS "CMAKE_CXX_COMPILER_ID: ${CMAKE_CXX_COMPILER_ID}")
 
-add_compile_options(-std=c++11 -Werror -Wall -Wextra)
+add_compile_options(-std=c++14 -Werror -Wall -Wextra)
 
 if ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
     add_compile_options(
@@ -42,6 +42,7 @@ if ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
         -Wno-gnu-zero-variadic-macro-arguments # configuru_test.cpp vs Loguru
         -Wno-missing-prototypes                # configuru_test.cpp
         -Wno-old-style-cast                    # configuru_test.cpp
+        -Wno-padded
     )
 endif() # Clang
 
