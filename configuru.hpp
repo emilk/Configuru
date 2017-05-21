@@ -26,6 +26,7 @@ www.github.com/emilk/configuru
 	0.3.3: 2017-01-10 - Add some missing iterator members
 	0.3.4: 2017-01-17 - Add cast conversion to std::array
 	0.4.0: 2017-04-17 - Automatic (de)serialization with serialize/deserialize with https://github.com/cbeck88/visit_struct
+	0.4.1: 2017-05-21 - Make it compile on VC++
 
 # Getting started
 	For using:

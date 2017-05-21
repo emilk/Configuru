@@ -402,8 +402,3 @@ Note how Configuru refrains from unnecessary line breaks on short arrays and doe
 		[ "two" "things" ]
 		"three"
 	]
-
-
-TODO
-===============================================================================
-* Test on another compiler than Clang and GCC.
