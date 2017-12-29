@@ -3027,6 +3027,7 @@ namespace configuru
 		fseek(fp, 0, SEEK_END);
 		auto size = ftell(fp);
 		if (size < 0) {
+			fclose(fp);
 			CONFIGURU_ONERROR(std::string("Failed to find out size of '") + path + "': " + strerror(errno));
 		}
 		contents.resize(static_cast<size_t>(size));
