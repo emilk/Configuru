@@ -27,6 +27,7 @@ www.github.com/emilk/configuru
 	0.3.4: 2017-01-17 - Add cast conversion to std::array
 	0.4.0: 2017-04-17 - Automatic (de)serialization with serialize/deserialize with https://github.com/cbeck88/visit_struct
 	0.4.1: 2017-05-21 - Make it compile on VC++
+	0.4.2: 2018-11-02 - Automatic serialize/deserialize of maps and enums
 
 # Getting started
 	For using:
@@ -72,6 +73,10 @@ www.github.com/emilk/configuru
 #include <type_traits>
 #include <utility>
 #include <vector>
+
+#ifdef VISITABLE_STRUCT
+	#include <unordered_map>
+#endif
 
 #ifndef CONFIGURU_ONERROR
 	#define CONFIGURU_ONERROR(message_str) \
@@ -1189,11 +1194,13 @@ namespace configuru
 	// before including <configuru.hpp> to get this feature.
 
 	#ifdef VISITABLE_STRUCT
-		template <typename Container>
-		struct is_container : std::false_type { };
-
+		template <typename Type> struct is_container : std::false_type { };
 		// template <typename... Ts> struct is_container<std::list<Ts...> > : std::true_type { };
 		template <typename... Ts> struct is_container<std::vector<Ts...> > : std::true_type { };
+
+		template <typename Type> struct is_map : std::false_type { };
+		template <typename... Ts> struct is_map<std::map<Ts...> > : std::true_type { };
+		template <typename... Ts> struct is_map<std::unordered_map<Ts...> > : std::true_type { };
 
 		// ----------------------------------------------------------------------------
 
@@ -1203,12 +1210,20 @@ namespace configuru
 		typename std::enable_if<std::is_arithmetic<T>::value, Config>::type
 		serialize(const T& some_value);
 
+		template<typename T>
+		typename std::enable_if<std::is_enum<T>::value, Config>::type
+		serialize(const T& some_enum);
+
 		template<typename T, size_t N>
 		Config serialize(T (&some_array)[N]);
 
 		template<typename T>
 		typename std::enable_if<is_container<T>::value, Config>::type
 		serialize(const T& some_container);
+
+		template<typename T>
+		typename std::enable_if<is_map<T>::value, Config>::type
+		serialize(const T& some_map);
 
 		template<typename T>
 		typename std::enable_if<visit_struct::traits::is_visitable<T>::value, Config>::type
@@ -1228,6 +1243,13 @@ namespace configuru
 			return Config(some_value);
 		}
 
+		template<typename T>
+		typename std::enable_if<std::is_enum<T>::value, Config>::type
+		serialize(const T& some_enum)
+		{
+			return Config(static_cast<int>(some_enum));
+		}
+
 		template<typename T, size_t N>
 		Config serialize(T (&some_array)[N])
 		{
@@ -1245,6 +1267,17 @@ namespace configuru
 			auto config = Config::array();
 			for (const auto& value : some_container) {
 				config.push_back(serialize(value));
+			}
+			return config;
+		}
+
+		template<typename T>
+		typename std::enable_if<is_map<T>::value, Config>::type
+		serialize(const T& some_map)
+		{
+			auto config = Config::array();
+			for (const auto& pair : some_map) {
+				config.push_back(Config::array({serialize(pair.first), serialize(pair.second)}));
 			}
 			return config;
 		}
@@ -1271,6 +1304,10 @@ namespace configuru
 		typename std::enable_if<std::is_arithmetic<T>::value>::type
 		deserialize(T* some_value, const Config& config, const ConversionError& on_error);
 
+		template<typename T>
+		typename std::enable_if<std::is_enum<T>::value>::type
+		deserialize(T* some_enum, const Config& config, const ConversionError& on_error);
+
 		template<typename T, size_t N>
 		typename std::enable_if<std::is_arithmetic<T>::value>::type
 		deserialize(T (*some_array)[N], const Config& config, const ConversionError& on_error);
@@ -1278,6 +1315,10 @@ namespace configuru
 		template<typename T>
 		typename std::enable_if<is_container<T>::value>::type
 		deserialize(T* some_container, const Config& config, const ConversionError& on_error);
+
+		template<typename T>
+		typename std::enable_if<is_map<T>::value>::type
+		deserialize(T* some_map, const Config& config, const ConversionError& on_error);
 
 		template<typename T>
 		typename std::enable_if<visit_struct::traits::is_visitable<T>::value>::type
@@ -1297,11 +1338,22 @@ namespace configuru
 			*some_value = as<T>(config);
 		}
 
+		template<typename T>
+		typename std::enable_if<std::is_enum<T>::value>::type
+		deserialize(T* some_enum, const Config& config, const ConversionError& on_error)
+		{
+			*some_enum = static_cast<T>(as<int>(config));
+		}
+
 		template<typename T, size_t N>
 		typename std::enable_if<std::is_arithmetic<T>::value>::type
 		deserialize(T (*some_array)[N], const Config& config, const ConversionError& on_error)
 		{
-			if (config.array_size() != N) {
+			if (!config.is_array()) {
+				if (on_error) {
+					on_error(config.where() + "Expected array");
+				}
+			} else if (config.array_size() != N) {
 				if (on_error) {
 					on_error(config.where() + "Expected array to be " + std::to_string(N) + " long.");
 				}
@@ -1326,6 +1378,32 @@ namespace configuru
 				for (const auto& value : config.as_array()) {
 					some_container->push_back({});
 					deserialize(&some_container->back(), value, on_error);
+				}
+			}
+		}
+
+		template<typename T>
+		typename std::enable_if<is_map<T>::value>::type
+		deserialize(T* some_map, const Config& config, const ConversionError& on_error)
+		{
+			if (!config.is_array()) {
+				if (on_error) {
+					on_error(config.where() + "Failed to deserialize map: config is not an array.");
+				}
+			} else {
+				some_map->clear();
+				for (const auto& pair : config.as_array()) {
+					if (pair.is_array() && pair.array_size() == 2) {
+						typename T::key_type key;
+						deserialize(&key, pair[0], on_error);
+						typename T::mapped_type value;
+						deserialize(&value, pair[1], on_error);
+						some_map->emplace(std::make_pair(std::move(key), std::move(value)));
+					} else {
+						if (on_error) {
+							on_error(config.where() + "Failed to deserialize map: expected array of [key, value] array-pairs.");
+						}
+					}
 				}
 			}
 		}
