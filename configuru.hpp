@@ -46,11 +46,14 @@ www.github.com/emilk/configuru
 // Yb      Yb   dP 88 Y88 88""   88 Yb  "88 Y8   8P 88"Yb  Y8   8P
 //  YboodP  YbodP  88  Y8 88     88  YboodP `YbodP' 88  Yb `YbodP'
 
-// Disable all warnings from gcc/clang:
+// Disable all warnings from gcc/clang/msvc:
 #if defined(__clang__)
 	#pragma clang system_header
 #elif defined(__GNUC__)
 	#pragma GCC system_header
+#elif defined(_MSC_VER)
+	#pragma warning( push, 0)
+	#pragma warning( disable : 4715 )  
 #endif
 
 #ifndef CONFIGURU_HEADER_HPP
@@ -504,7 +507,7 @@ namespace configuru
 		float as_float() const
 		{
 			if (_type == Int) {
-				return _u.i;
+				return static_cast<float>(_u.i);
 			} else {
 				assert_type(Float);
 				return static_cast<float>(_u.f);
@@ -514,10 +517,10 @@ namespace configuru
 		double as_double() const
 		{
 			if (_type == Int) {
-				return _u.i;
+				return static_cast<double>(_u.i);
 			} else {
 				assert_type(Float);
-				return _u.f;
+				return static_cast<double>(_u.f);
 			}
 		}
 
@@ -3655,3 +3658,8 @@ namespace configuru
 // ----------------------------------------------------------------------------
 
 #endif // CONFIGURU_IMPLEMENTATION
+
+// Make sure that msvc will reset to the default warning level
+#if defined(_MSC_VER)
+	#pragma warning( pop )
+#endif
