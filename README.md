@@ -169,13 +169,13 @@ The call to `check_dangling` is recursive, so you only need to call it once for 
 Usage
 ===============================================================================
 For using:
-	`#include <configuru.hpp>`
+	Just `#include <configuru.hpp>` where you want to use Configuru
 
-And in one .cpp file:
+Then, in only one .cpp file:
 
 ``` C++
 #define CONFIGURU_IMPLEMENTATION 1
-#include <configuru.hpp>
+#include <configuru.cpp>
 ```
 
 
@@ -250,6 +250,8 @@ If you include visit_struct.hpp from https://github.com/cbeck88/visit_struct *be
 ``` C++
 #include <visit_struct/visit_struct.hpp>
 #include <configuru.hpp>
+#define CONFIGURU_IMPLEMENTATION 1
+#include <configuru.cpp>
 
 struct Foo
 {
