@@ -184,26 +184,33 @@ Usage (parsing)
 ``` C++
 Config cfg = configuru::parse_file("input.json", JSON);
 float alpha = (float)cfg["alpha"];
+std::cout << "alpha = " << alpha << std::endl;
 if (cfg.has_key("beta")) {
 	std::string beta = (std::string)cfg["beta"];
+	std::cout << "beta = " << beta << std::endl;
 }
-float pi = cfg.get_or(pi, 3.14f);
+float pi = cfg.get_or("pi", 3.14f);
+std::cout << "pi = " << pi << std::endl;
 
 if (cfg["array"].is_array()) {
-	std::cout << "First element: " << cfg["array"][0];
+	std::cout << "array:" << std::endl;
 	for (const Config& element : cfg["array"].as_array()) {
-		std::cout << element << std::endl;
+		std::cout << "\t" << element << std::endl;
 	}
 }
 
+std::cout << "object" << std::endl;
 for (auto& p : cfg["object"].as_object()) {
-	std::cout << "Key: " << p.key() << std::endl;
-	std::cout << "Value: " << p.value() << std::endl;
+	std::cout << "\tKey: " << p.key() << std::endl;
+	std::cout << "\tValue: " << p.value() << std::endl;
 	p.value() = "new value";
 }
 
-cfg.check_dangling(); // Make sure we haven't forgot reading a key!
-
+try {
+	cfg.check_dangling(); // Make sure we haven't forgot reading a key!
+} catch (const std::exception &e) {
+	std::cerr << e.what() << std::endl;
+}
 // You can modify the read config:
 cfg["message"] = "goodbye";
 
