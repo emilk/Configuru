@@ -184,13 +184,13 @@ Usage (parsing)
 ``` C++
 Config cfg = configuru::parse_file("input.json", JSON);
 float alpha = (float)cfg["alpha"];
-std::cout << "alpha = " << std::endl;
+std::cout << "alpha = " << alpha << std::endl;
 if (cfg.has_key("beta")) {
 	std::string beta = (std::string)cfg["beta"];
-	std::cout << "beta = " << std::endl;
+	std::cout << "beta = " << beta << std::endl;
 }
 float pi = cfg.get_or("pi", 3.14f);
-std::cout << "pi = " << std::endl;
+std::cout << "pi = " << pi << std::endl;
 
 if (cfg["array"].is_array()) {
 	std::cout << "array:" << std::endl;
