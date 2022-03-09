@@ -1787,7 +1787,7 @@ namespace configuru
 			auto&& b_array = b.as_array();
 			if (a_array.size() != b_array.size()) { return false; }
 			for (size_t i=0; i<a_array.size(); ++i) {
-				if (!deep_eq(a_array[i], a_array[i])) {
+				if (!deep_eq(a_array[i], b_array[i])) {
 					return false;
 				}
 			}
