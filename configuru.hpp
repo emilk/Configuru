@@ -3078,7 +3078,7 @@ namespace configuru
 			dst = parse_file(path.c_str(), _options, child_doc, _info);
 			_info.parsed_files[path] = dst;
 		} else {
-			auto child_doc = it->second.doc();
+			auto &child_doc = it->second.doc();
 			child_doc->includers.emplace_back(_doc, _line_nr);
 			dst = it->second;
 		}
